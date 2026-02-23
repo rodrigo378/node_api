@@ -7,99 +7,22 @@ import {
   ZoomUser,
 } from "./types";
 import { ZoomRepository } from "./repository";
+import { mapWithConcurrency, mergeParticipant } from "./helpers";
 
 type ZoomMeetingMerged = Omit<ZoomMeetingReportItem, "uuid"> & {
   uuid: string | string[];
   shortname?: string | undefined;
   participantes?: ZoomMeetingParticipant[] | undefined;
 };
-type ParticipantSegment = ZoomMeetingParticipant;
 
 export class ZoomService {
   PERU_TZ = "America/Lima";
   fecha = "2026-02-10";
   GAP_MINUTES = 10;
 
-  participantKey(p: ZoomMeetingParticipant): string {
-    return (
-      (p as any).participant_user_id ||
-      p.id ||
-      p.user_email ||
-      String(p.user_id || "") ||
-      `name:${(p.name || "").trim().toLowerCase()}`
-    );
-  }
-
-  toDT(iso: string) {
-    // join_time/leave_time vienen en Z (UTC)
-    return DateTime.fromISO(iso, { zone: "utc" });
-  }
-
-  mergeParticipantSessionsByGap(
-    participants: ZoomMeetingParticipant[],
-    gapMinutes = this.GAP_MINUTES,
-  ): ZoomMeetingParticipant[] {
-    const byKey = new Map<string, ZoomMeetingParticipant[]>();
-
-    for (const p of participants) {
-      if (!p.join_time || !p.leave_time) continue;
-      const k = this.participantKey(p);
-      const arr = byKey.get(k) ?? [];
-      arr.push(p);
-      byKey.set(k, arr);
-    }
-
-    const out: ZoomMeetingParticipant[] = [];
-
-    for (const [, arr] of byKey) {
-      arr.sort((a, b) => Date.parse(a.join_time) - Date.parse(b.join_time));
-
-      let current: ZoomMeetingParticipant | null = null;
-
-      for (const p of arr) {
-        if (!current) {
-          current = { ...p };
-          continue;
-        }
-
-        const curLeave = this.toDT(current.leave_time);
-        const nextJoin = this.toDT(p.join_time);
-
-        // si nextJoin <= curLeave + gap => merge
-        if (
-          nextJoin.toMillis() <=
-          curLeave.plus({ minutes: gapMinutes }).toMillis()
-        ) {
-          const nextLeave = this.toDT(p.leave_time);
-
-          // leave_time máximo
-          if (nextLeave > curLeave) {
-            current.leave_time = p.leave_time;
-          }
-
-          // join_time mínimo (por si hay rarezas)
-          if (this.toDT(p.join_time) < this.toDT(current.join_time)) {
-            current.join_time = p.join_time;
-          }
-
-          // suma duration (Zoom ya te lo trae por sesión)
-          current.duration = (current.duration || 0) + (p.duration || 0);
-        } else {
-          // gap grande => cerramos segmento y empezamos otro
-          out.push(current);
-          current = { ...p };
-        }
-      }
-
-      if (current) out.push(current);
-    }
-
-    return out;
-  }
-
   constructor(
     private zoomHttp: ZoomHttpClient,
-    private readonly zoomRepository: ZoomRepository,
+    private zoomRepository: ZoomRepository,
   ) {}
 
   async getUsuarios() {
@@ -133,34 +56,6 @@ export class ZoomService {
     return usuarios;
   }
 
-  private async mapWithConcurrency<T, R>(
-    items: readonly T[],
-    concurrency: number,
-    worker: (item: T) => Promise<R>,
-  ) {
-    const results: R[] = new Array(items.length);
-    let index = 0;
-
-    const run = async () => {
-      while (true) {
-        const current = index++;
-        if (current >= items.length) break;
-
-        const item = items[current];
-        if (item === undefined) continue;
-        results[current] = await worker(item);
-      }
-    };
-
-    const workers = Array.from(
-      { length: Math.min(concurrency, items.length) },
-      () => run(),
-    );
-
-    await Promise.all(workers);
-    return results;
-  }
-
   async getReuniones() {
     const usuarios = await this.getUsuarios();
 
@@ -168,21 +63,16 @@ export class ZoomService {
     const param_to = "2026-02-17";
     const page_size = 300;
 
-    const meetingsPerUser = await this.mapWithConcurrency(
-      usuarios,
-      3,
-      async (u) => {
-        const resp: ZoomMeetingsReportResponse =
-          await this.zoomHttp.getReuniones(
-            u.id,
-            param_from,
-            param_to,
-            page_size,
-          );
+    const meetingsPerUser = await mapWithConcurrency(usuarios, 3, async (u) => {
+      const resp: ZoomMeetingsReportResponse = await this.zoomHttp.getReuniones(
+        u.id,
+        param_from,
+        param_to,
+        page_size,
+      );
 
-        return resp.meetings as ZoomMeetingReportItem[];
-      },
-    );
+      return resp.meetings as ZoomMeetingReportItem[];
+    });
 
     const reuniones: ZoomMeetingReportItem[] = meetingsPerUser.flat();
 
@@ -281,9 +171,6 @@ export class ZoomService {
   }
 
   async enriquerReuniones() {
-    // const ge = this.zoomRepository.getEstudiantes();
-    // return ge;
-
     const reuniones = await this.filtrarReuniones();
 
     for (const reu of reuniones) {
@@ -300,7 +187,7 @@ export class ZoomService {
 
         reu.shortname = shortname;
         // reu.participantes = respParticipantes.participants;
-        reu.participantes = this.mergeParticipantSessionsByGap(
+        reu.participantes = await mergeParticipant(
           respParticipantes.participants,
           10,
         );
@@ -323,10 +210,7 @@ export class ZoomService {
 
         reu.shortname = shortname;
         // reu.participantes = participantes;
-        reu.participantes = this.mergeParticipantSessionsByGap(
-          participantes,
-          10,
-        );
+        reu.participantes = await mergeParticipant(participantes, 10);
       }
     }
 

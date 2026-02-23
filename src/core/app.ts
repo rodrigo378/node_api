@@ -6,10 +6,10 @@ import { registerRoutes } from "./routes";
 export async function buildApp() {
   const app = Fastify({ logger: true });
 
-  await registerRoutes(app);
-
   const db = await initDb(env.DB_CONNECTIONS);
   app.decorate("db", db);
+
+  await registerRoutes(app);
 
   app.addHook("onClose", async () => {
     await db.closeAll();

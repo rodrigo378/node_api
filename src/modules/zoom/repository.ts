@@ -1,15 +1,17 @@
-import { Knex } from "knex";
-import { DbRegistry } from "../../core/db/registry";
+import type { Knex } from "knex";
+import type { DbRegistry } from "../../core/db/registry";
+
+export type DbName = "SIGU_LECTURA" | "SIGU_ESCRITURA"; // agrega las que tengas
 
 export class ZoomRepository {
-  private db: Knex;
+  constructor(private readonly registry: DbRegistry) {}
 
-  constructor(registry: DbRegistry, dbName = "SIGU_LECTURA") {
-    this.db = registry.get(dbName);
+  private db(dbName: DbName): Knex {
+    return this.registry.get(dbName);
   }
 
   async getEstudiantes() {
-    const [rows] = await this.db.raw(
+    const [rows] = await this.db("SIGU_LECTURA").raw(
       "SELECT * FROM tb_doc_cur_grp WHERE n_codper = ?",
       [20261],
     );
