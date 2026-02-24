@@ -1,3 +1,8 @@
+// {
+//     "statusCode": 500,
+//     "error": "Internal Server Error",
+//     "message": "Zoom getUsers 3 error 404: {\"code\":3001,\"message\":\"Meeting does not exist: AsrIpnYRn6z1jnfgzEcuA==.\"}"
+// }
 import { request } from "undici";
 import { env } from "../../core/config/env";
 import type {
@@ -11,6 +16,13 @@ import type {
 export class ZoomHttpClient {
   private token: string | null = null;
   private expiresAtMs = 0;
+
+  private encodeMeetingUuid(uuid: string) {
+    // OJO: no quitar '/' internos; solo espacios
+    const clean = String(uuid ?? "").trim();
+    // Zoom: a veces exige doble encoding si trae '/' o empieza con '/'
+    return encodeURIComponent(encodeURIComponent(clean));
+  }
 
   private async getToken() {
     const now = Date.now();
@@ -63,7 +75,7 @@ export class ZoomHttpClient {
 
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw new Error(
-        `Zoom getUsers error ${res.statusCode}: ${await res.body.text()}`,
+        `Zoom getUsers 1 error ${res.statusCode}: ${await res.body.text()}`,
       );
     }
 
@@ -88,21 +100,26 @@ export class ZoomHttpClient {
 
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw new Error(
-        `Zoom getUsers error ${res.statusCode}: ${await res.body.text()}`,
+        `Zoom getUsers 2 error ${res.statusCode}: ${await res.body.text()}`,
       );
     }
     return (await res.body.json()) as ZoomMeetingsReportResponse;
   }
 
   async getDetalleReunion(uuid: string) {
-    const res = await request(`${env.ZOOM.BASE_URL}/report/meetings/${uuid}`, {
+    const uuidEnc = this.encodeMeetingUuid(uuid);
+
+    const base = env.ZOOM.BASE_URL.replace(/\/+$/, ""); // evita // en base
+    const url = `${base}/report/meetings/${uuidEnc}`;
+
+    const res = await request(url, {
       method: "GET",
       headers: await this.authHeaders(),
     });
 
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw new Error(
-        `Zoom getUsers error ${res.statusCode}: ${await res.body.text()}`,
+        `Zoom getDetalleReunion error ${res.statusCode}: ${await res.body.text()}`,
       );
     }
 
@@ -110,20 +127,24 @@ export class ZoomHttpClient {
   }
 
   async getParticipantesReunion(uuid: string, page_size: number) {
-    const qs = new URLSearchParams({
-      page_size: String(page_size),
-    });
+    const uuidEnc = this.encodeMeetingUuid(uuid);
 
-    const res = await request(
-      `${env.ZOOM.BASE_URL}/report/meetings/${uuid}/participants?${qs.toString()}`,
-      { method: "GET", headers: await this.authHeaders() },
-    );
+    const qs = new URLSearchParams({ page_size: String(page_size) });
+
+    const base = env.ZOOM.BASE_URL.replace(/\/+$/, "");
+    const url = `${base}/report/meetings/${uuidEnc}/participants?${qs.toString()}`;
+
+    const res = await request(url, {
+      method: "GET",
+      headers: await this.authHeaders(),
+    });
 
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw new Error(
-        `Zoom getUsers error ${res.statusCode}: ${await res.body.text()}`,
+        `Zoom getParticipantesReunion error ${res.statusCode}: ${await res.body.text()}`,
       );
     }
+
     return (await res.body.json()) as ZoomMeetingParticipantsResponse;
   }
 }
