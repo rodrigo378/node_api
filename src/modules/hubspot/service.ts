@@ -11,6 +11,15 @@ export class HubspotService {
   ) {}
 
   // ===================================================================================
+  private toDate(value: unknown): Date {
+    if (!value) return new Date();
+
+    const date = value instanceof Date ? value : new Date(String(value));
+
+    return Number.isNaN(date.getTime()) ? new Date() : date;
+  }
+
+  // ===================================================================================
   async sincronizarContactos() {
     console.log("se inicio sincro contacto");
 
@@ -25,36 +34,42 @@ export class HubspotService {
       const responseContactos: Api_Hubspot[] = response.results.map(
         (c: any) => ({
           id: c.id,
-          n__de_d_n_i: c.properties.n__de_d_n_i ?? null,
-          campana_admision: c.properties.campana_admision ?? null,
-          estado_matricula: c.properties.estado_matricula ?? null,
-          estado_pagos: c.properties.estado_pagos ?? null,
-          estado_postulante: c.properties.estado_postulante ?? null,
+
           firstname: c.properties.firstname ?? null,
           lastname: c.properties.lastname ?? null,
-          apellido_paterno: c.properties.apellido_paterno ?? null,
-          apellido_materno: c.properties.apellido_materno ?? null,
-          tipo_de_documento: c.properties.tipo_de_documento ?? null,
+          carrera_o_especialidad: c.properties.carrera_o_especialidad ?? null,
+          hs_lead_status: c.properties.hs_lead_status ?? null,
+          canal: c.properties.canal ?? null,
+          email: c.properties.email ?? null,
+          mobilphone: c.properties.mobilphone ?? null,
+          campana_admision: c.properties.campana_admision ?? null,
+          como_te_enteraste: c.properties.como_te_enteraste ?? null,
+          n__de_d_n_i: c.properties.n__de_d_n_i ?? null,
+          phone: c.properties.phone ?? null,
+          edad: c.properties.edad ?? null,
+          modalidad_de_estudio: c.properties.modalidad_de_estudio ?? null,
+          turno: c.properties.turno ?? null,
+          tipo_de_ingreso: c.properties.tipo_de_ingreso ?? null,
+          colegio_de_procedencia: c.properties.colegio_de_procedencia ?? null,
+          fecha_de_inscripcion: c.properties.fecha_de_inscripcion ?? null,
+          fecha_de_pagante: c.properties.fecha_de_pagante ?? null,
+          fecha_de_matricula: c.properties.fecha_de_matricula ?? null,
           departamento: c.properties.departamento ?? null,
           provincia_de_procedencia:
             c.properties.provincia_de_procedencia ?? null,
           distrito_de_procedencia: c.properties.distrito_de_procedencia ?? null,
-          distrito: c.properties.distrito ?? null,
-          phone: c.properties.phone ?? null,
-          mobilphone: c.properties.mobilphone ?? null,
-          email: c.properties.email ?? null,
-          procedencia: c.properties.procedencia ?? null,
-          distrito_del_colegio: c.properties.distrito_del_colegio ?? null,
-          colegio_de_procedencia: c.properties.colegio_de_procedencia ?? null,
-          ano_de_egreso: c.properties.ano_de_egreso ?? null,
-          modalidad_de_estudio: c.properties.modalidad_de_estudio ?? null,
+          colegio: c.properties.colegio ?? null,
+          instituto_de_procedencia:
+            c.properties.instituto_de_procedencia ?? null,
+          universidad_de_procedencia:
+            c.properties.universidad_de_procedencia ?? null,
           genero_m__f: c.properties.genero_m__f ?? null,
-          carrera_o_especialidad: c.properties.carrera_o_especialidad ?? null,
-          fecha_de_inicio_academico:
-            c.properties.fecha_de_inicio_academico ?? null,
-          turno: c.properties.turno ?? null,
-          created_at: c.createdAt,
-          updated_at: c.updatedAt,
+          estado_matricula: c.properties.estado_matricula ?? null,
+          estado_pagos: c.properties.estado_pagos ?? null,
+          estado_postulante: c.properties.estado_postulante ?? null,
+
+          created_at: this.toDate(c.createdAt),
+          updated_at: this.toDate(c.updatedAt),
         }),
       );
 
@@ -78,57 +93,76 @@ export class HubspotService {
 
   // ===================================================================================
   async sincronizarConsolidado() {
-    console.log("inicio");
+    console.log("inicio consolidado Hubspot");
 
     const contactos = await this.repo.getContactos();
 
-    const grupos = new Map<string, typeof contactos>();
-    for (const c of contactos) {
-      if (!c.n__de_d_n_i) continue;
-      const key = `${c.n__de_d_n_i}-${c.campana_admision}`;
-      if (!grupos.has(key)) grupos.set(key, []);
-      grupos.get(key)!.push(c);
+    const grupos = new Map<string, Api_Hubspot[]>();
+
+    for (const contacto of contactos) {
+      if (!contacto.n__de_d_n_i) continue;
+
+      const key = `${contacto.n__de_d_n_i}-${contacto.campana_admision ?? ""}`;
+
+      if (!grupos.has(key)) {
+        grupos.set(key, []);
+      }
+
+      grupos.get(key)!.push(contacto);
     }
 
     const arrayContactos: Api_Hubspot_Consolidado[] = [];
-    for (const contac of grupos.values()) {
+
+    for (const contactosGrupo of grupos.values()) {
+      const base = contactosGrupo[0];
+
+      if (!base) continue;
+
       arrayContactos.push({
-        id: contac[0]?.id || "",
-        n__de_d_n_i: contac[0]?.n__de_d_n_i || "",
-        campana_admision: contac[0]?.campana_admision || "",
-        estado_matricula: contac[0]?.estado_matricula || "",
-        estado_pagos: contac[0]?.estado_pagos || "",
-        estado_postulante: contac[0]?.estado_postulante || "",
-        firstname: contac[0]?.firstname || "",
-        lastname: contac[0]?.lastname || "",
-        apellido_paterno: contac[0]?.apellido_paterno || "",
-        apellido_materno: contac[0]?.apellido_materno || "",
-        tipo_de_documento: contac[0]?.tipo_de_documento || "",
-        departamento: contac[0]?.departamento || "",
-        provincia_de_procedencia: contac[0]?.provincia_de_procedencia || "",
-        distrito_de_procedencia: contac[0]?.distrito_de_procedencia || "",
-        distrito: contac[0]?.distrito || "",
-        phone: contac[0]?.phone || "",
-        mobilphone: contac[0]?.mobilphone || "",
-        email: contac[0]?.email || "",
-        procedencia: contac[0]?.procedencia || "",
-        distrito_del_colegio: contac[0]?.distrito_del_colegio || "",
-        colegio_de_procedencia: contac[0]?.colegio_de_procedencia || "",
-        ano_de_egreso: contac[0]?.ano_de_egreso || "",
-        modalidad_de_estudio: contac[0]?.modalidad_de_estudio || "",
-        genero_m__f: contac[0]?.genero_m__f || "",
-        carrera_o_especialidad: contac[0]?.carrera_o_especialidad || "",
-        fecha_de_inicio_academico: contac[0]?.fecha_de_inicio_academico || "",
-        turno: contac[0]?.turno || "",
-        cantidad: contac.length,
-        ids: contac.map((c) => c.id).join(","),
-        created_at: contac[0]?.created_at ?? new Date(),
-        updated_at: contac[0]?.updated_at ?? new Date(),
+        id: base.id,
+
+        n__de_d_n_i: base.n__de_d_n_i ?? null,
+        campana_admision: base.campana_admision ?? null,
+        firstname: base.firstname ?? null,
+        lastname: base.lastname ?? null,
+        carrera_o_especialidad: base.carrera_o_especialidad ?? null,
+        hs_lead_status: base.hs_lead_status ?? null,
+        canal: base.canal ?? null,
+        email: base.email ?? null,
+        mobilphone: base.mobilphone ?? null,
+        como_te_enteraste: base.como_te_enteraste ?? null,
+        phone: base.phone ?? null,
+        edad: base.edad ?? null,
+        modalidad_de_estudio: base.modalidad_de_estudio ?? null,
+        turno: base.turno ?? null,
+        tipo_de_ingreso: base.tipo_de_ingreso ?? null,
+        colegio_de_procedencia: base.colegio_de_procedencia ?? null,
+        fecha_de_inscripcion: base.fecha_de_inscripcion ?? null,
+        fecha_de_pagante: base.fecha_de_pagante ?? null,
+        fecha_de_matricula: base.fecha_de_matricula ?? null,
+        departamento: base.departamento ?? null,
+        provincia_de_procedencia: base.provincia_de_procedencia ?? null,
+        distrito_de_procedencia: base.distrito_de_procedencia ?? null,
+        colegio: base.colegio ?? null,
+        instituto_de_procedencia: base.instituto_de_procedencia ?? null,
+        universidad_de_procedencia: base.universidad_de_procedencia ?? null,
+        genero_m__f: base.genero_m__f ?? null,
+        estado_matricula: base.estado_matricula ?? null,
+        estado_pagos: base.estado_pagos ?? null,
+        estado_postulante: base.estado_postulante ?? null,
+
+        cantidad: String(contactosGrupo.length),
+        ids: contactosGrupo.map((c) => c.id).join(","),
+
+        created_at: base.created_at ?? new Date(),
+        updated_at: base.updated_at ?? new Date(),
       });
     }
 
     await this.repo.upsertManyHubspotConsolidado(arrayContactos);
-    console.log("fin");
+
+    console.log("fin consolidado Hubspot");
+
     return true;
   }
 
@@ -137,6 +171,7 @@ export class HubspotService {
     console.log("inicio sincronización completa Hubspot");
 
     const totalContactos = await this.sincronizarContactos();
+
     await this.sincronizarConsolidado();
 
     console.log("fin sincronización completa Hubspot");

@@ -1,33 +1,35 @@
 export interface Api_Hubspot {
   id: string;
 
-  n__de_d_n_i: string | null;
-  campana_admision: string | null;
-  estado_matricula: string | null;
-  estado_pagos: string | null;
-  estado_postulante: string | null;
   firstname: string | null;
   lastname: string | null;
-
-  apellido_paterno: string | null;
-  apellido_materno: string | null;
-  tipo_de_documento: string | null;
+  carrera_o_especialidad: string | null;
+  hs_lead_status: string | null;
+  canal: string | null;
+  email: string | null;
+  mobilphone: string | null;
+  campana_admision: string | null;
+  como_te_enteraste: string | null;
+  n__de_d_n_i: string | null;
+  phone: string | null;
+  edad: string | null;
+  modalidad_de_estudio: string | null;
+  turno: string | null;
+  tipo_de_ingreso: string | null;
+  colegio_de_procedencia: string | null;
+  fecha_de_inscripcion: string | null;
+  fecha_de_pagante: string | null;
+  fecha_de_matricula: string | null;
   departamento: string | null;
   provincia_de_procedencia: string | null;
   distrito_de_procedencia: string | null;
-  distrito: string | null;
-  phone: string | null;
-  mobilphone: string | null;
-  email: string | null;
-  procedencia: string | null;
-  distrito_del_colegio: string | null;
-  colegio_de_procedencia: string | null;
-  ano_de_egreso: string | null;
-  modalidad_de_estudio: string | null;
+  colegio: string | null;
+  instituto_de_procedencia: string | null;
+  universidad_de_procedencia: string | null;
   genero_m__f: string | null;
-  carrera_o_especialidad: string | null;
-  fecha_de_inicio_academico: string | null;
-  turno: string | null;
+  estado_matricula: string | null;
+  estado_pagos: string | null;
+  estado_postulante: string | null;
 
   created_at: Date;
   updated_at: Date;
@@ -35,46 +37,38 @@ export interface Api_Hubspot {
 
 export interface Api_Hubspot_Consolidado {
   id: string;
-  n__de_d_n_i?: string | null;
-  campana_admision?: string | null;
-  estado_matricula?: string | null;
-  estado_pagos?: string | null;
-  estado_postulante?: string | null;
-  firstname?: string | null;
-  lastname?: string | null;
-
-  apellido_paterno: string | null;
-  apellido_materno: string | null;
-  tipo_de_documento: string | null;
+  n__de_d_n_i: string | null;
+  campana_admision: string | null;
+  firstname: string | null;
+  lastname: string | null;
+  carrera_o_especialidad: string | null;
+  hs_lead_status: string | null;
+  canal: string | null;
+  email: string | null;
+  mobilphone: string | null;
+  como_te_enteraste: string | null;
+  phone: string | null;
+  edad: string | null;
+  modalidad_de_estudio: string | null;
+  turno: string | null;
+  tipo_de_ingreso: string | null;
+  colegio_de_procedencia: string | null;
+  fecha_de_inscripcion: string | null;
+  fecha_de_pagante: string | null;
+  fecha_de_matricula: string | null;
   departamento: string | null;
   provincia_de_procedencia: string | null;
   distrito_de_procedencia: string | null;
-  distrito: string | null;
-  phone: string | null;
-  mobilphone: string | null;
-  email: string | null;
-  procedencia: string | null;
-  distrito_del_colegio: string | null;
-  colegio_de_procedencia: string | null;
-  ano_de_egreso: string | null;
-  modalidad_de_estudio: string | null;
+  colegio: string | null;
+  instituto_de_procedencia: string | null;
+  universidad_de_procedencia: string | null;
   genero_m__f: string | null;
-  carrera_o_especialidad: string | null;
-  fecha_de_inicio_academico: string | null;
-  turno: string | null;
+  estado_matricula: string | null;
+  estado_pagos: string | null;
+  estado_postulante: string | null;
+  cantidad: string | null;
+  ids: string | null;
 
-  cantidad: number;
-  ids: string;
   created_at: Date;
   updated_at: Date;
-}
-
-export interface Api_Hubspot_SyncLog {
-  id: string;
-  source: string;
-  startedAt: string;
-  finishedAt: string | null;
-  status: "running" | "success" | "failed";
-  recordsProcessed: number | null;
-  error: string | null;
 }
