@@ -77,6 +77,9 @@ export class HubspotService {
       after = response.paging?.next?.after;
 
       if (buffer.length >= BUFFER_SIZE) {
+        console.log("BUFFER_SIZE => ", BUFFER_SIZE);
+        console.log("totalInsertados => ", totalInsertados);
+
         await this.repo.upsertManyHubspot(buffer);
         totalInsertados += buffer.length;
         buffer = [];
@@ -115,7 +118,7 @@ export class HubspotService {
 
     for (const contactosGrupo of grupos.values()) {
       const base = contactosGrupo[0];
-
+      //
       if (!base) continue;
 
       arrayContactos.push({
