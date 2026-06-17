@@ -3,7 +3,6 @@ import { env } from "../../core/config/env";
 import {
   ZoomMeetingDetail,
   ZoomMeetingParticipantsResponse,
-  ZoomMeetingReportDetail,
   ZoomMeetingsReportResponse,
   ZoomPastMeetingInstancesResponse,
   ZoomTokenResponse,

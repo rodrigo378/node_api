@@ -21,6 +21,9 @@ const BaseEnvSchema = z.object({
 
   HUBSPOT_API_BASE: z.string(),
   HUBSPOT_TOKEN: z.string(),
+
+  BASE_MOODLE: z.string(),
+  TOKEN_MOODLE: z.string(),
 });
 
 const base = BaseEnvSchema.parse(process.env);
@@ -62,6 +65,11 @@ export const env = {
     HOST: base.REDIS_HOST,
     PORT: base.REDIS_PORT,
     PASSWORD: base.REDIS_PASSWORD,
+  },
+
+  TI: {
+    BASE_MOODLE: base.BASE_MOODLE,
+    TOKEN_MOODLE: base.TOKEN_MOODLE,
   },
 
   DB_CONNECTIONS: names.map((name) =>

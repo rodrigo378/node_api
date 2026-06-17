@@ -17,7 +17,11 @@ import { HubspotHttpClient } from "../../modules/hubspot/http";
 import { HubspotRepository } from "../../modules/hubspot/repository";
 import { HubspotService } from "../../modules/hubspot/service";
 import { buildHubspotHandler } from "../../modules/hubspot/hubspot.handler";
-import { HUBSPOT_QUEUE, ZOOM_QUEUE } from "./queue.constants";
+import { HUBSPOT_QUEUE, TI_QUEUE, ZOOM_QUEUE } from "./queue.constants";
+import { TiService } from "../../modules/ti/service";
+import { buildTiHandler } from "../../modules/ti/ti.handler";
+import { TiRepository } from "../../modules/ti/repository";
+import { MoodleHttpClient } from "../../modules/ti/http";
 
 type WorkerTuningOptions = {
   lockDuration?: number;
@@ -135,6 +139,7 @@ export function startWorkers(db: DbRegistry) {
     new HubspotHttpClient(),
     new HubspotRepository(db),
   );
+
   const hubspot = buildWorker(
     HUBSPOT_QUEUE,
     buildHubspotHandler(hubspotService),
@@ -147,6 +152,10 @@ export function startWorkers(db: DbRegistry) {
     },
   );
 
+  // Zoom
+  const tiService = new TiService(new TiRepository(db), new MoodleHttpClient());
+  const ti = buildWorker(TI_QUEUE, buildTiHandler(tiService), 2, log);
+
   logger.info("Workers 'zoom' y 'hubspot' iniciados");
 
   const closeAll = async () => {
@@ -155,6 +164,8 @@ export function startWorkers(db: DbRegistry) {
       zoom.events.close(),
       hubspot.worker.close(),
       hubspot.events.close(),
+      ti.worker.close(),
+      ti.events.close(),
     ]);
   };
 

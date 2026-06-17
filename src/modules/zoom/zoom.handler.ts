@@ -1,8 +1,3 @@
-// modules/zoom/zoom.handler.ts
-//
-// Recibe el job de la cola "zoom", lee job.data.action y llama
-// al método correspondiente del ZoomService.
-
 import type { Job } from "bullmq";
 import { ZoomService } from "./service";
 import { ZOOM_ACTIONS } from "../../core/queue/queue.constants";
