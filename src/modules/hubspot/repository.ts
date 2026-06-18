@@ -84,6 +84,8 @@ export class HubspotRepository {
       estado_pagos: d.estado_pagos ?? null,
       estado_postulante: d.estado_postulante ?? null,
 
+      owern_name: d.owern_name ?? null,
+
       created_at: this.toMysqlDate(d.created_at) ?? now,
       updated_at: this.toMysqlDate(d.updated_at) ?? now,
     }));
@@ -119,6 +121,8 @@ export class HubspotRepository {
       "estado_pagos",
       "estado_postulante",
       "updated_at",
+
+      "owern_name",
     ];
 
     for (let i = 0; i < rows.length; i += BATCH_SIZE) {
@@ -182,6 +186,8 @@ export class HubspotRepository {
       cantidad: d.cantidad ?? null,
       ids: d.ids ?? null,
 
+      owern_name: d.owern_name ?? null,
+
       created_at: this.toMysqlDate(d.created_at) ?? now,
       updated_at: this.toMysqlDate(d.updated_at) ?? now,
     }));
@@ -217,6 +223,9 @@ export class HubspotRepository {
       "estado_pagos",
       "estado_postulante",
       "cantidad",
+
+      "owern_name",
+
       "ids",
       "updated_at",
     ];

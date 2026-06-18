@@ -31,6 +31,8 @@ export interface Api_Hubspot {
   estado_pagos: string | null;
   estado_postulante: string | null;
 
+  owern_name: string | null;
+
   created_at: Date;
   updated_at: Date;
 }
@@ -68,6 +70,8 @@ export interface Api_Hubspot_Consolidado {
   estado_postulante: string | null;
   cantidad: string | null;
   ids: string | null;
+
+  owern_name: string | null;
 
   created_at: Date;
   updated_at: Date;

@@ -19,9 +19,24 @@ export class HubspotService {
     return Number.isNaN(date.getTime()) ? new Date() : date;
   }
 
+  private buildOwnerName(firstName?: string, lastName?: string): string | null {
+    const name = `${firstName ?? ""} ${lastName ?? ""}`.trim();
+
+    return name.length > 0 ? name : null;
+  }
+
   // ===================================================================================
   async sincronizarContactos() {
     console.log("se inicio sincro contacto");
+
+    const ownersResponse = await this.http.getOwerns();
+
+    const ownersById = new Map<string, string | null>(
+      ownersResponse.results.map((owner) => [
+        String(owner.id),
+        this.buildOwnerName(owner.firstName, owner.lastName),
+      ]),
+    );
 
     let after: string | undefined;
     let totalInsertados = 0;
@@ -32,45 +47,54 @@ export class HubspotService {
       const response = await this.http.getContactos(after);
 
       const responseContactos: Api_Hubspot[] = response.results.map(
-        (c: any) => ({
-          id: c.id,
+        (c: any) => {
+          const ownerId = c.properties.hubspot_owner_id ?? null;
 
-          firstname: c.properties.firstname ?? null,
-          lastname: c.properties.lastname ?? null,
-          carrera_o_especialidad: c.properties.carrera_o_especialidad ?? null,
-          hs_lead_status: c.properties.hs_lead_status ?? null,
-          canal: c.properties.canal ?? null,
-          email: c.properties.email ?? null,
-          mobilphone: c.properties.mobilphone ?? null,
-          campana_admision: c.properties.campana_admision ?? null,
-          como_te_enteraste: c.properties.como_te_enteraste ?? null,
-          n__de_d_n_i: c.properties.n__de_d_n_i ?? null,
-          phone: c.properties.phone ?? null,
-          edad: c.properties.edad ?? null,
-          modalidad_de_estudio: c.properties.modalidad_de_estudio ?? null,
-          turno: c.properties.turno ?? null,
-          tipo_de_ingreso: c.properties.tipo_de_ingreso ?? null,
-          colegio_de_procedencia: c.properties.colegio_de_procedencia ?? null,
-          fecha_de_inscripcion: c.properties.fecha_de_inscripcion ?? null,
-          fecha_de_pagante: c.properties.fecha_de_pagante ?? null,
-          fecha_de_matricula: c.properties.fecha_de_matricula ?? null,
-          departamento: c.properties.departamento ?? null,
-          provincia_de_procedencia:
-            c.properties.provincia_de_procedencia ?? null,
-          distrito_de_procedencia: c.properties.distrito_de_procedencia ?? null,
-          colegio: c.properties.colegio ?? null,
-          instituto_de_procedencia:
-            c.properties.instituto_de_procedencia ?? null,
-          universidad_de_procedencia:
-            c.properties.universidad_de_procedencia ?? null,
-          genero_m__f: c.properties.genero_m__f ?? null,
-          estado_matricula: c.properties.estado_matricula ?? null,
-          estado_pagos: c.properties.estado_pagos ?? null,
-          estado_postulante: c.properties.estado_postulante ?? null,
+          return {
+            id: c.id,
 
-          created_at: this.toDate(c.createdAt),
-          updated_at: this.toDate(c.updatedAt),
-        }),
+            firstname: c.properties.firstname ?? null,
+            lastname: c.properties.lastname ?? null,
+            carrera_o_especialidad: c.properties.carrera_o_especialidad ?? null,
+            hs_lead_status: c.properties.hs_lead_status ?? null,
+            canal: c.properties.canal ?? null,
+            email: c.properties.email ?? null,
+            mobilphone: c.properties.mobilphone ?? null,
+            campana_admision: c.properties.campana_admision ?? null,
+            como_te_enteraste: c.properties.como_te_enteraste ?? null,
+            n__de_d_n_i: c.properties.n__de_d_n_i ?? null,
+            phone: c.properties.phone ?? null,
+            edad: c.properties.edad ?? null,
+            modalidad_de_estudio: c.properties.modalidad_de_estudio ?? null,
+            turno: c.properties.turno ?? null,
+            tipo_de_ingreso: c.properties.tipo_de_ingreso ?? null,
+            colegio_de_procedencia: c.properties.colegio_de_procedencia ?? null,
+            fecha_de_inscripcion: c.properties.fecha_de_inscripcion ?? null,
+            fecha_de_pagante: c.properties.fecha_de_pagante ?? null,
+            fecha_de_matricula: c.properties.fecha_de_matricula ?? null,
+            departamento: c.properties.departamento ?? null,
+            provincia_de_procedencia:
+              c.properties.provincia_de_procedencia ?? null,
+            distrito_de_procedencia:
+              c.properties.distrito_de_procedencia ?? null,
+            colegio: c.properties.colegio ?? null,
+            instituto_de_procedencia:
+              c.properties.instituto_de_procedencia ?? null,
+            universidad_de_procedencia:
+              c.properties.universidad_de_procedencia ?? null,
+            genero_m__f: c.properties.genero_m__f ?? null,
+            estado_matricula: c.properties.estado_matricula ?? null,
+            estado_pagos: c.properties.estado_pagos ?? null,
+            estado_postulante: c.properties.estado_postulante ?? null,
+
+            owern_name: ownerId
+              ? (ownersById.get(String(ownerId)) ?? null)
+              : null,
+
+            created_at: this.toDate(c.createdAt),
+            updated_at: this.toDate(c.updatedAt),
+          };
+        },
       );
 
       buffer.push(...responseContactos);
@@ -153,6 +177,8 @@ export class HubspotService {
         estado_matricula: base.estado_matricula ?? null,
         estado_pagos: base.estado_pagos ?? null,
         estado_postulante: base.estado_postulante ?? null,
+
+        owern_name: base.owern_name ?? null,
 
         cantidad: String(contactosGrupo.length),
         ids: contactosGrupo.map((c) => c.id).join(","),

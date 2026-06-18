@@ -40,6 +40,7 @@ export class HubspotHttpClient {
         "estado_matricula",
         "estado_pagos",
         "estado_postulante",
+        "hubspot_owner_id",
       ].join(","),
     });
 
@@ -69,6 +70,30 @@ export class HubspotHttpClient {
           link: string;
         };
       };
+    };
+  }
+
+  // https://api.hubapi.com/crm/v3/owners/?limit=200&includeInactive=true
+  async getOwerns() {
+    const res = await request(
+      `${this.base_url}/crm/v3/owners/?limit=200&includeInactive=true`,
+      {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${this.token}`,
+          "Content-Type": "application/json",
+        },
+      },
+    );
+
+    return (await res.body.json()) as {
+      results: {
+        id: string;
+        email?: string;
+        firstName?: string;
+        lastName?: string;
+        userId?: number;
+      }[];
     };
   }
 }
