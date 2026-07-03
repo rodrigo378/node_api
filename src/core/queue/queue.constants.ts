@@ -4,6 +4,15 @@
 export const ZOOM_QUEUE = "zoom";
 export const HUBSPOT_QUEUE = "hubspot";
 export const TI_QUEUE = "ti";
+export const HEALTH_QUEUE = "health";
+
+// Acciones de health (lo que llega en job.data.action)
+export const HEALTH_ACTIONS = {
+  PING: "ping",
+  FULL: "full",
+} as const;
+
+export type HealthAction = (typeof HEALTH_ACTIONS)[keyof typeof HEALTH_ACTIONS];
 
 // Acciones de Zoom (lo que llega en job.data.action)
 export const ZOOM_ACTIONS = {

@@ -20,13 +20,13 @@ async function main() {
 
   // const service = new ZoomService(new ZoomHttpClient(), new ZoomRepository(db));
 
-  const service = new HubspotService(
-    new HubspotHttpClient(),
-    new HubspotRepository(db),
-  );
-  // const service = new TiService(new TiRepository(db), new MoodleHttpClient());
-  // const result = await service.sincronizar(5895);
-  const result = await service.sincronizarConsolidado();
+  // const service = new HubspotService(
+  //   new HubspotHttpClient(),
+  //   new HubspotRepository(db),
+  // );
+  const service = new TiService(new TiRepository(db), new MoodleHttpClient());
+  const result = await service.sincronizar(6078);
+  // const result = await service.sincronizarConsolidado();
   console.log("Resultado:", result);
 
   await db.closeAll();

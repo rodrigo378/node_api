@@ -330,10 +330,9 @@ export class TiService {
         throw new Error("No se recibió schedule_id para ejecución scheduler.");
       }
 
-      // courseids = await this.tiRepository.getScheduleItemCourseIds(
-      //   dto.schedule_id,
-      // );
-      courseids = [5895];
+      courseids = await this.tiRepository.getScheduleItemCourseIds(
+        dto.schedule_id,
+      );
     }
 
     if (courseids.length === 0) {
@@ -348,8 +347,6 @@ export class TiService {
 
     return this.poolMap(courseids, CONCURRENCY, async (courseid: number) => {
       try {
-        console.log("2 courseid => ", courseid);
-
         const data = await this.sincronizar(courseid);
 
         return {

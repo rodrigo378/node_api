@@ -54,6 +54,17 @@ export class TiRepository {
     return rows as { c_email_institucional: string }[];
   }
 
+  async getScheduleItemCourseIds(scheduleId: number): Promise<number[]> {
+    const rows = await this.db("API_2")
+      .from("sch_schedule_item")
+      .where({ schedule_id: scheduleId })
+      .pluck("courseid");
+
+    return rows
+      .map((courseid: unknown) => Number(courseid))
+      .filter((courseid: number) => Number.isFinite(courseid));
+  }
+
   async getDocentes(courseid: number) {
     const [rows] = await this.db("SIGU_LECTURA").raw(`
               select DISTINCT

@@ -17,7 +17,17 @@ import { HubspotHttpClient } from "../../modules/hubspot/http";
 import { HubspotRepository } from "../../modules/hubspot/repository";
 import { HubspotService } from "../../modules/hubspot/service";
 import { buildHubspotHandler } from "../../modules/hubspot/hubspot.handler";
-import { HUBSPOT_QUEUE, TI_QUEUE, ZOOM_QUEUE } from "./queue.constants";
+import {
+  HEALTH_QUEUE,
+  HUBSPOT_QUEUE,
+  TI_QUEUE,
+  ZOOM_QUEUE,
+} from "./queue.constants";
+import {
+  buildHealthHandler,
+  type QueueStatus,
+  type WorkersStatus,
+} from "./health.handler";
 import { TiService } from "../../modules/ti/service";
 import { buildTiHandler } from "../../modules/ti/ti.handler";
 import { TiRepository } from "../../modules/ti/repository";
@@ -115,10 +125,29 @@ function buildWorker(
     logger.error({ queueName, jobId, failedReason }, "QueueEvents failed"),
   );
 
-  worker.on("ready", () => logger.info(`Worker '${queueName}' listo`));
-  worker.on("error", (err) => logger.error({ queueName, err }, "Worker error"));
+  // Estado del worker para el health check
+  const state = { ready: false, lastError: null as string | null };
 
-  return { worker, events };
+  worker.on("ready", () => {
+    state.ready = true;
+    logger.info(`Worker '${queueName}' listo`);
+  });
+  worker.on("error", (err) => {
+    state.lastError = err instanceof Error ? err.message : String(err);
+    logger.error({ queueName, err }, "Worker error");
+  });
+  worker.on("closing", () => {
+    state.ready = false;
+  });
+
+  const getStatus = (): QueueStatus => ({
+    ready: state.ready,
+    running: worker.isRunning(),
+    paused: worker.isPaused(),
+    lastError: state.lastError,
+  });
+
+  return { worker, events, getStatus };
 }
 
 // ===================================================================
@@ -152,11 +181,26 @@ export function startWorkers(db: DbRegistry) {
     },
   );
 
-  // Zoom
+  // Ti
   const tiService = new TiService(new TiRepository(db), new MoodleHttpClient());
   const ti = buildWorker(TI_QUEUE, buildTiHandler(tiService), 2, log);
 
-  logger.info("Workers 'zoom' y 'hubspot' iniciados");
+  // Health: estado GENERAL de las 3 colas (viven en el mismo proceso)
+  const getStatus = (): WorkersStatus => ({
+    [ZOOM_QUEUE]: zoom.getStatus(),
+    [HUBSPOT_QUEUE]: hubspot.getStatus(),
+    [TI_QUEUE]: ti.getStatus(),
+  });
+
+  // Cola dedicada 'health': liviana y aislada, siempre responde rápido
+  const health = buildWorker(
+    HEALTH_QUEUE,
+    buildHealthHandler(getStatus, db),
+    5,
+    log,
+  );
+
+  logger.info("Workers 'zoom', 'hubspot', 'ti' y 'health' iniciados");
 
   const closeAll = async () => {
     await Promise.all([
@@ -166,8 +210,10 @@ export function startWorkers(db: DbRegistry) {
       hubspot.events.close(),
       ti.worker.close(),
       ti.events.close(),
+      health.worker.close(),
+      health.events.close(),
     ]);
   };
 
-  return { closeAll };
+  return { closeAll, getStatus };
 }

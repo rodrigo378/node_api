@@ -49,8 +49,6 @@ export function buildTiHandler(service: TiService) {
           .map((courseid: unknown) => Number(courseid))
           .filter((courseid: number) => Number.isFinite(courseid));
 
-        console.log("courseids => ", courseids);
-
         result = await service.sincronizarBatch({
           courseids,
           source,
