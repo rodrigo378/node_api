@@ -19,7 +19,7 @@ export function buildTiHandler(service: TiService) {
     console.log("traceId:", finalTraceId);
     console.log("meta:", meta);
     console.log("payload:", JSON.stringify(payload, null, 2));
-    console.log("======================================");
+    console.log("====================================1==");
 
     if (!action) {
       throw new Error("Falta action en job.data (ti)");
