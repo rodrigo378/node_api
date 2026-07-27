@@ -6,7 +6,10 @@
     "dev": "tsx watch src/main.ts",
     "build": "tsc",
     "start": "node dist/main.js",
-    "test:zoom": "tsx src/testing/test-hubspot.ts"
+    "test:zoom": "tsx src/testing/test-hubspot.ts",
+    "test:salas": "tsx src/testing/test-salas-simultaneas.ts",
+    "test:horario": "tsx src/testing/test-horario.ts",
+    "test:dryrun": "tsx src/testing/test-asistencia-dryrun.ts"
   },
   "keywords": [],
   "author": "",

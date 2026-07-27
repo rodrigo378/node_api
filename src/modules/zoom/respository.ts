@@ -58,6 +58,40 @@ export class ZoomRepository {
     return rows as Zoom_Meeting[];
   }
 
+  // Intervalos (sala + inicio + duracion) para detectar reuniones simultaneas.
+  // source: "instance" = lo que ocurrio, "occurrence" = lo programado.
+  async getIntervalosSala(source: "instance" | "occurrence") {
+    const table =
+      source === "instance"
+        ? "zoom_meeting_instance"
+        : "zoom_meeting_occurrence";
+
+    const rows = await this.db("API_2")(`${table} as t`)
+      .join("zoom_meeting as m", "t.meeting_id", "m.id")
+      .join("zoom_user as u", "m.room_id", "u.id")
+      .whereNotNull("t.start_time")
+      .whereNotNull("t.duration")
+      .select(
+        "m.room_id as room_id",
+        "u.display_name as room_name",
+        "u.email as room_email",
+        "m.zoom_meeting_id as zoom_meeting_id",
+        "m.topic as topic",
+        "t.start_time as start_time",
+        "t.duration as duration",
+      );
+
+    return rows as {
+      room_id: number;
+      room_name: string | null;
+      room_email: string | null;
+      zoom_meeting_id: string;
+      topic: string | null;
+      start_time: Date;
+      duration: number;
+    }[];
+  }
+
   async getTbCursoGrupoSincro() {
     const [rows] = await this.db("SIGU_LECTURA").raw(
       `
@@ -66,7 +100,7 @@ export class ZoomRepository {
       `,
     );
 
-    return rows as { courseid: number; c_codfac: string }[];
+    return rows as { courseid: number; c_codfac: string; n_codper: number }[];
   }
 
   async getAttendanceConfig() {
@@ -159,8 +193,7 @@ export class ZoomRepository {
           AND a.c_codesp_alu = s.c_codesp
           AND a.c_codmod = s.c_codmod
         WHERE
-          a.n_codper = 20261
-          AND a.c_codfac_alu IN ('E', 'S')
+          a.c_codfac_alu IN ('E', 'S')
           AND a.c_codalu NOT IN (2119921, 12345678)
           AND s.courseid = ?
         GROUP BY
@@ -585,7 +618,14 @@ export class ZoomRepository {
       h.n_numdia,
       h.c_codmod,
       h.c_codesp,
-      h.n_codpla
+      h.n_codpla,
+      -- Sin las horas el DISTINCT colapsa bloques distintos del mismo grupo y
+      -- se pierde a que clase pertenece cada reunion. Ver modules/zoom/horario.ts
+      h.c_hh_ini,
+      h.c_mi_ini,
+      h.c_hh_fin,
+      h.c_mi_fin,
+      h.c_tipo
     FROM
       tb_curso_grupo_sincro s
       JOIN tb_cur_grp_hor h
@@ -614,6 +654,12 @@ export class ZoomRepository {
       c_codmod: number;
       c_codcur: string;
       c_dnidoc: string;
+      n_numdia: number;
+      c_hh_ini: string | null;
+      c_mi_ini: string | null;
+      c_hh_fin: string | null;
+      c_mi_fin: string | null;
+      c_tipo: string | null;
     }[];
   }
 
@@ -693,7 +739,8 @@ export class ZoomRepository {
       c_user_upd,
       d_fecha_upd
     )
-    VALUES ${placeholders};
+    VALUES ${placeholders}
+    ON DUPLICATE KEY UPDATE n_codper = n_codper;
     `,
       values,
     );
@@ -701,12 +748,7 @@ export class ZoomRepository {
     return row;
   }
 
-  async getSesiones(
-    n_codper: number,
-    courseid: number,
-    d_fecha: string,
-    c_dnidoc: string,
-  ) {
+  async getSesiones(courseid: number, d_fecha: string, c_dnidoc: string) {
     const [row] = await this.db("SIGU_LECTURA").raw(
       `
       SELECT 
@@ -723,13 +765,12 @@ export class ZoomRepository {
           AND s.c_grpcur = h.c_grpcur
           AND s.c_codmod = h.c_codmod
           AND s.n_codpla = h.n_codpla
-      WHERE 
+      WHERE
             s.courseid = ?
             AND h.d_fecha = ?
-            AND s.n_codper = ?
             AND h.c_dnidoc = ?
     `,
-      [courseid, d_fecha, n_codper, c_dnidoc],
+      [courseid, d_fecha, c_dnidoc],
     );
     return row as {
       id_asistencia: number;
@@ -779,13 +820,14 @@ export class ZoomRepository {
 
     const [row] = await this.db("SIGU_INSERT").raw(
       `
-    INSERT INTO tb_asis_alum_det (
-      id_asistencia,
-      c_codalu,
-      c_estado,
-      seguir
-    )
-    VALUES ${placeholders};
+      INSERT INTO tb_asis_alum_det (
+        id_asistencia,
+        c_codalu,
+        c_estado,
+        seguir
+      )
+      VALUES ${placeholders}
+      ON DUPLICATE KEY UPDATE id_asistencia = id_asistencia;
     `,
       values,
     );

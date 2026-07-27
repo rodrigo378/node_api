@@ -4,7 +4,7 @@ import { ZOOM_ACTIONS } from "../../core/queue/queue.constants";
 
 export function buildZoomHandler(service: ZoomService) {
   return async (job: Job) => {
-    const { action, traceId } = job?.data ?? {};
+    const { action, traceId, periodo } = job?.data ?? {};
 
     if (!action) {
       throw new Error("Falta action en job.data (zoom)");
@@ -34,7 +34,7 @@ export function buildZoomHandler(service: ZoomService) {
         break;
 
       case ZOOM_ACTIONS.SYNC_ASISTENCIAS:
-        result = await service.sincronizarAsistencias();
+        result = await service.sincronizarAsistencias(periodo);
         break;
 
       default:

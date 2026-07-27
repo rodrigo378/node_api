@@ -8,6 +8,22 @@ import {
   Zoom_MeetingParticipant,
 } from "./types/db.types";
 import { ZoomUser } from "./types/http.types";
+import {
+  claveBloqueDeTema,
+  claveVentana,
+  docentesDelBloque,
+  esTardanza,
+  gruposDeSlots,
+  inicioProgramadoSlot,
+  resolverGruposSesion,
+} from "./horario";
+import {
+  diaSemanaLima,
+  diaTextoLima,
+  fechaLima,
+  horaMinLima,
+  minutosDiaLima,
+} from "../../core/utils/time";
 
 // ===================================================================================
 export class ZoomService {
@@ -47,13 +63,13 @@ export class ZoomService {
 
   // ===================================================================================
   async sincronizarMeetingsRooms() {
-    console.log("aca => 1");
+    // const desdeDate = new Date();
+    // desdeDate.setDate(desdeDate.getDate() - 7);
 
-    const desdeDate = new Date();
-    desdeDate.setDate(desdeDate.getDate() - 7);
-
-    const hastaDate = new Date();
-    hastaDate.setDate(hastaDate.getDate() + 30);
+    // const hastaDate = new Date();
+    // hastaDate.setDate(hastaDate.getDate() + 30);
+    const desdeDate = new Date("2026-07-06T00:00:00.000Z");
+    const hastaDate = new Date("2026-11-01T00:00:00.000Z");
 
     const from: string = desdeDate.toISOString();
     const to: string = hastaDate.toISOString();
@@ -94,9 +110,19 @@ export class ZoomService {
     for (const meeting of meetings) {
       console.log("meeting => ", meeting);
 
-      const details = await this.zoomHttp.getMeetingsRoomsDetails(
-        meeting.zoom_meeting_id!,
-      );
+      let details;
+      try {
+        details = await this.zoomHttp.getMeetingsRoomsDetails(
+          meeting.zoom_meeting_id!,
+        );
+      } catch (error) {
+        console.warn(
+          `No se pudo obtener detalles de la reunión ${meeting.zoom_meeting_id} (${meeting.topic}), se omite:`,
+          error instanceof Error ? error.message : error,
+        );
+        continue;
+      }
+
       const shortname =
         details.tracking_fields?.find(
           (f) => f.field?.trim().toLowerCase() === "shortname",
@@ -164,6 +190,140 @@ export class ZoomService {
     await this.zoomRepository.upsertZoomMeetingOccurrences(occurrencesFinal);
 
     return true;
+  }
+
+  // ===================================================================================
+  async detectarSalasSimultaneas(
+    source: "instance" | "occurrence",
+    minSimultaneas = 3,
+  ) {
+    // Peru es UTC-5 (sin horario de verano).
+    const PERU_OFFSET_MS = 5 * 60 * 60 * 1000;
+    const enPeru = (d: Date) => new Date(d.getTime() - PERU_OFFSET_MS);
+    const fechaPeru = (d: Date) => enPeru(d).toISOString().slice(0, 10);
+    const horaPeru = (d: Date) => enPeru(d).toISOString().slice(11, 16);
+
+    const intervalos = await this.zoomRepository.getIntervalosSala(source);
+
+    // Agrupar intervalos por sala.
+    const porSala = new Map<number, typeof intervalos>();
+    for (const it of intervalos) {
+      const arr = porSala.get(it.room_id) ?? [];
+      arr.push(it);
+      porSala.set(it.room_id, arr);
+    }
+
+    type Reunion = {
+      zoom_meeting_id: string;
+      topic: string | null;
+      start_time: Date;
+      fin: Date;
+    };
+
+    type Episodio = {
+      room_id: number;
+      room_name: string | null;
+      room_email: string | null;
+      fecha: string; // YYYY-MM-DD hora Peru
+      inicio: Date; // inicio del choque
+      fin: Date; // fin del choque
+      maxSimultaneas: number;
+      reuniones: Reunion[];
+    };
+
+    const episodios: Episodio[] = [];
+
+    for (const [room_id, items] of porSala) {
+      const room_name = items[0]?.room_name ?? null;
+      const room_email = items[0]?.room_email ?? null;
+
+      // Eventos: +1 al iniciar, -1 al finalizar (fin = inicio + duracion minutos).
+      const eventos = items.flatMap((it) => {
+        const inicio = new Date(it.start_time).getTime();
+        const fin = inicio + it.duration * 60 * 1000;
+        return [
+          { t: inicio, delta: 1, it, fin },
+          { t: fin, delta: -1, it, fin },
+        ];
+      });
+
+      // Ordenar por tiempo; ante empate, primero las salidas (-1) para no
+      // contar como simultaneo algo que termina justo cuando otro empieza.
+      eventos.sort((a, b) => a.t - b.t || a.delta - b.delta);
+
+      // Barrido: detectar cada tramo en que activos >= minSimultaneas.
+      const activas = new Set<(typeof items)[number]>();
+      let enChoque = false;
+      let inicioChoque = 0;
+      let maxChoque = 0;
+      let reunionesChoque = new Map<string, Reunion>();
+
+      const registrarActivas = () => {
+        for (const it of activas) {
+          reunionesChoque.set(it.zoom_meeting_id, {
+            zoom_meeting_id: it.zoom_meeting_id,
+            topic: it.topic,
+            start_time: new Date(it.start_time),
+            fin: new Date(
+              new Date(it.start_time).getTime() + it.duration * 60 * 1000,
+            ),
+          });
+        }
+      };
+
+      for (const ev of eventos) {
+        if (ev.delta === 1) activas.add(ev.it);
+        else activas.delete(ev.it);
+
+        const activos = activas.size;
+
+        if (activos >= minSimultaneas && !enChoque) {
+          enChoque = true;
+          inicioChoque = ev.t;
+          maxChoque = activos;
+          reunionesChoque = new Map();
+          registrarActivas();
+        } else if (enChoque && activos >= minSimultaneas) {
+          maxChoque = Math.max(maxChoque, activos);
+          registrarActivas();
+        } else if (enChoque && activos < minSimultaneas) {
+          // Fin del choque.
+          const inicio = new Date(inicioChoque);
+          episodios.push({
+            room_id,
+            room_name,
+            room_email,
+            fecha: fechaPeru(inicio),
+            inicio,
+            fin: new Date(ev.t),
+            maxSimultaneas: maxChoque,
+            reuniones: [...reunionesChoque.values()].sort(
+              (a, b) => a.start_time.getTime() - b.start_time.getTime(),
+            ),
+          });
+          enChoque = false;
+        }
+      }
+    }
+
+    // Ordenar cronologicamente.
+    episodios.sort((a, b) => a.inicio.getTime() - b.inicio.getTime());
+
+    console.log(
+      `[${source}] Choques de >= ${minSimultaneas} reuniones simultaneas: ${episodios.length}`,
+    );
+    for (const e of episodios) {
+      console.log(
+        `  ${e.fecha} ${horaPeru(e.inicio)}-${horaPeru(e.fin)} | ${e.room_name ?? e.room_id} (${e.room_email ?? "-"}) | ${e.maxSimultaneas} simultaneas`,
+      );
+      for (const m of e.reuniones) {
+        console.log(
+          `      - ${horaPeru(m.start_time)} a ${horaPeru(m.fin)} | ${m.topic ?? m.zoom_meeting_id}`,
+        );
+      }
+    }
+
+    return episodios;
   }
 
   // ===================================================================================
@@ -504,37 +664,75 @@ export class ZoomService {
       const duration = sessions.reduce((sum, s) => sum + s.duration, 0);
       host.role = "host";
 
-      const n_numdia = start_time ? start_time.getDay() : null;
+      // Dia y hora civiles de Lima, derivados del offset fijo y no del TZ del
+      // proceso, para que el resultado sea el mismo corriendo en UTC.
+      const n_numdia = start_time ? diaSemanaLima(start_time) : null;
+      const minutosInicio = start_time ? minutosDiaLima(start_time) : null;
 
-      const docentesSigu = await this.zoomRepository.getDocentes(
-        instance.courseid,
-        n_numdia!,
-      );
+      const dataGrupos =
+        n_numdia === null
+          ? []
+          : await this.zoomRepository.getHorarioGrupo(
+              instance.courseid,
+              n_numdia,
+            );
 
-      const dataGrupos = await this.zoomRepository.getHorarioGrupo(
-        instance.courseid,
-        n_numdia!,
-      );
+      // La sala de Zoom es una cuenta compartida, asi que el host no identifica
+      // al docente: se deduce del bloque horario en que arranco la reunion.
+      const docentesBloque =
+        minutosInicio === null
+          ? []
+          : docentesDelBloque({ slots: dataGrupos, minutos: minutosInicio });
 
-      const a_c_grpcur = dataGrupos.map((d) => d.c_grpcur);
-      console.log("a_c_grpcur => ", a_c_grpcur);
+      const docenteDni = docentesBloque[0] ?? null;
 
-      let docenteDni: string | null = null;
-      if (docentesSigu.length === 1) {
-        docenteDni = docentesSigu[0]?.c_dnidoc ?? null;
-      } else if (docentesSigu.length > 1 && start_time) {
-        const hostHour = start_time.getHours().toString().padStart(2, "0");
-        console.log("hostHour => ", hostHour);
-
-        const match = docentesSigu.find((d: any) => {
-          const horaDocente = String(d.c_hh_ini ?? "").padStart(2, "0");
-          return horaDocente === hostHour;
-        });
-
-        docenteDni = match?.c_dnidoc ?? docentesSigu[0]?.c_dnidoc ?? null;
+      if (docentesBloque.length > 1) {
+        console.warn(
+          `Instance ${instance.id} con docente ambiguo: el bloque de ` +
+            `${horaMinLima(start_time!)} lo dictan ${docentesBloque.join(", ")}. ` +
+            `Se usa ${docenteDni}.`,
+        );
+      } else if (!docentesBloque.length) {
+        console.warn(
+          `Instance ${instance.id} no cae en ningun bloque del horario ` +
+            `(courseid ${instance.courseid}, dia ${n_numdia}, ${minutosInicio} min)`,
+        );
       }
 
       host.c_dnidoc = docenteDni;
+
+      // Grupos de la clase: el bloque horario del docente elegido, no todo lo
+      // que se dicta ese dia. Sin este recorte una reunion de 18:50-20:30
+      // marcaba como "corresponde" a alumnos de grupos que solo tienen clase
+      // 17:10-18:50. Tiene que dar lo mismo que subirAsistencia, que arma las
+      // sesiones con el mismo criterio.
+      const slotsDelBloque =
+        minutosInicio === null || !docenteDni
+          ? []
+          : resolverGruposSesion({
+              slots: dataGrupos.filter((s) => s.c_dnidoc === docenteDni),
+              minutos: minutosInicio,
+            });
+
+      const a_c_grpcur = gruposDeSlots(slotsDelBloque);
+      console.log("a_c_grpcur => ", a_c_grpcur);
+
+      // Referencia de la tardanza: la hora en que la clase DEBIA empezar segun
+      // el horario, no cuando el docente abrio la sala. Si la reunion no cae en
+      // ningun bloque no hay hora programada y se cae a la apertura de la sala.
+      const inicioProgramado =
+        slotsDelBloque[0] && start_time
+          ? inicioProgramadoSlot(slotsDelBloque[0], start_time)
+          : null;
+
+      const referenciaTardanza = inicioProgramado ?? start_time ?? null;
+
+      console.log(
+        "referencia tardanza => ",
+        inicioProgramado
+          ? `${horaMinLima(inicioProgramado)} (horario)`
+          : `${start_time ? horaMinLima(start_time) : "?"} (apertura de sala, sin bloque)`,
+      );
 
       for (const procesado of procesados) {
         if (procesado.role === "host") continue;
@@ -619,14 +817,12 @@ export class ZoomService {
           procesado.attendance = false;
         }
 
-        // Late
-        if (start_time && procesado.firstJoin) {
-          const toleranceMs = config.lateToleranceMinutes * 60 * 1000;
-          const diff = procesado.firstJoin.getTime() - start_time.getTime();
-          procesado.late = diff > toleranceMs;
-        } else {
-          procesado.late = null;
-        }
+        // Late: contra la hora programada del bloque, no la apertura de la sala.
+        procesado.late = esTardanza({
+          firstJoin: procesado.firstJoin,
+          referencia: referenciaTardanza,
+          toleranciaMin: config.lateToleranceMinutes,
+        });
       }
 
       const fechaClase = start_time
@@ -730,15 +926,11 @@ export class ZoomService {
           procesado.attendance = false;
         }
 
-        if (start_time && procesado.firstJoin) {
-          const toleranceMs = config.lateToleranceMinutes * 60 * 1000;
-          const diff =
-            new Date(procesado.firstJoin).getTime() - start_time.getTime();
-
-          procesado.late = diff > toleranceMs;
-        } else {
-          procesado.late = null;
-        }
+        procesado.late = esTardanza({
+          firstJoin: procesado.firstJoin,
+          referencia: referenciaTardanza,
+          toleranciaMin: config.lateToleranceMinutes,
+        });
       }
 
       await this.zoomRepository.insertZoomMeetingParticipants(procesadosFinal);
@@ -773,38 +965,29 @@ export class ZoomService {
   }
 
   // ===================================================================================
-  async sincronizarAsistencias() {
-    console.log("inicio asistencia");
-
-    const instances = (
-      await this.zoomRepository.getInstances({
-        participantsProcessed: true,
-        participantsSynced: true,
-        attendance_status: "PENDING",
-      })
-    )
-      // ).filter((i) =>
-      //   [
-      //     // 118
-      //     4376,
-      //   ].includes(i.meeting_id),
-      .filter((i) =>
-        [
-          239364, 239366, 239367, 239368, 239369, 239370, 239371, 239372,
-          239373, 239374, 239375, 239376, 239377, 239379, 239380, 239382,
-          239383, 239384, 239385, 239387, 239388, 239390, 239391, 239392,
-          239394, 239397, 239400, 239401, 239403, 239404, 239406,
-        ].includes(i.id),
-      );
-
-    // const instances = await this.zoomRepository.getInstances({
-    //   participantsProcessed: true,
-    //   participantsSynced: true,
-    //   attendance_status: "PENDING",
-    // });
+  async sincronizarAsistencias(periodo?: number) {
+    console.log("inicio asistencia", periodo ? `periodo ${periodo}` : "todos");
 
     const tbCursoGrupoSincro =
       await this.zoomRepository.getTbCursoGrupoSincro();
+
+    const periodoPorCourseid = new Map(
+      tbCursoGrupoSincro.map((c) => [Number(c.courseid), Number(c.n_codper)]),
+    );
+
+    let instances = await this.zoomRepository.getInstances({
+      participantsProcessed: true,
+      participantsSynced: true,
+      attendance_status: "PENDING",
+    });
+
+    if (periodo) {
+      instances = instances.filter(
+        (i) =>
+          i.courseid != null &&
+          periodoPorCourseid.get(Number(i.courseid)) === periodo,
+      );
+    }
 
     for (const instance of instances) {
       if (!instance.courseid) {
@@ -859,21 +1042,20 @@ export class ZoomService {
         continue;
       }
 
+      if (!instance.start_time) {
+        console.warn(`Instance ${instance.id} sin start_time, skipeando`);
+        continue;
+      }
+
+      const d_fecha = fechaLima(instance.start_time);
+      const minutosInicio = minutosDiaLima(instance.start_time);
+      const diaTexto = diaTextoLima(instance.start_time);
+      const horaInicio = horaMinLima(instance.start_time);
+
       console.log("====================================");
       console.log("instacia.id => ", instance.id);
       console.log("courseid => ", instance.courseid);
-      console.log(
-        "instance.start_time => ",
-        new Date(
-          instance.start_time.getTime() - 5 * 60 * 60 * 1000,
-        ).toISOString(),
-      );
-
-      const d_fecha = instance.start_time
-        ? new Date(instance.start_time.getTime() - 5 * 60 * 60 * 1000)
-            .toISOString()
-            .slice(0, 10)
-        : null;
+      console.log("inicio (Lima) => ", `${d_fecha} ${horaInicio}`);
 
       const dniDocente = await this.zoomRepository.getDocenteParticipantes(
         instance.id,
@@ -892,43 +1074,95 @@ export class ZoomService {
         continue;
       }
 
-      const sesion: any[] = await this.zoomRepository.sesionExistente(
+      const horarioDocente = await this.zoomRepository.getHorarioGrupo(
         instance.courseid,
-        d_fecha ?? "",
-        dniDocente?.c_dnidoc ?? "",
+        diaSemanaLima(instance.start_time),
+        dniDocente.c_dnidoc,
       );
 
-      if (sesion && sesion.length > 0) {
+      // Recorte clave: de todo lo que el docente dicta ese dia, solo el bloque
+      // horario en que arranco la reunion. Antes se creaba una sesion por cada
+      // grupo del dia, asi que una practica de 18:50-20:30 de N1 generaba
+      // tambien la sesion de N2, que solo tiene clase 17:10-18:50.
+      const sesionGrupo = resolverGruposSesion({
+        slots: horarioDocente,
+        minutos: minutosInicio,
+      });
+
+      if (!sesionGrupo.length) {
+        console.warn(
+          `Instance ${instance.id} no cae en ningun bloque del horario ` +
+            `(courseid ${instance.courseid}, ${d_fecha} ${horaInicio}, doc. ${dniDocente.c_dnidoc}). ` +
+            `No se crean sesiones.`,
+        );
+        continue;
+      }
+
+      const gruposBloque = gruposDeSlots(sesionGrupo);
+      const claveBloque = claveVentana(sesionGrupo[0]!);
+      console.log("grupos del bloque => ", gruposBloque, claveBloque);
+
+      // Dedupe por grupo Y bloque, no por dia. Dos instancias de la misma clase
+      // (el docente cerro y volvio a abrir la sala) no deben duplicar la sesion,
+      // pero la teoria y la practica del mismo grupo el mismo dia son clases
+      // distintas y cada una lleva la suya. tb_asis_alum no tiene columna de
+      // hora, asi que el bloque de una sesion existente se deduce de la hora que
+      // quedo en su c_tema.
+      const existentes: any[] = await this.zoomRepository.sesionExistente(
+        instance.courseid,
+        d_fecha,
+        dniDocente.c_dnidoc,
+      );
+
+      const idsDelBloque = new Map<string, number>();
+
+      for (const s of existentes ?? []) {
+        const grupo = String(s.c_grpcur).trim();
+        if (!gruposBloque.includes(grupo)) continue;
+
+        const claveExistente = claveBloqueDeTema(s.c_tema, horarioDocente);
+
+        if (claveExistente === null) {
+          // Sesion sin hora en el tema (cargada a mano): no se puede ubicar en
+          // un bloque, se respeta y no se duplica.
+          console.warn(
+            `Sesion ${s.id_asistencia} (${grupo}, ${d_fecha}) sin hora en c_tema; ` +
+              `se asume que cubre este bloque.`,
+          );
+        } else if (claveExistente !== claveBloque) {
+          continue;
+        }
+
+        idsDelBloque.set(grupo, s.id_asistencia);
+      }
+
+      // Una fila por grupo: tb_asis_alum no tiene unique key (el ON DUPLICATE KEY
+      // de createSesiones solo cubre la PK autoincremental), asi que dos slots
+      // del mismo grupo en la misma ventana insertarian la sesion dos veces.
+      const porGrupo = new Map<string, (typeof sesionGrupo)[number]>();
+      for (const s of sesionGrupo) {
+        const grupo = String(s.c_grpcur).trim();
+        if (!idsDelBloque.has(grupo) && !porGrupo.has(grupo)) {
+          porGrupo.set(grupo, s);
+        }
+      }
+
+      const faltantes = [...porGrupo.values()];
+
+      if (!faltantes.length) {
         await this.zoomRepository.upsertZoomMeetingInstances([
           {
             uuid: instance.uuid,
             meeting_id: instance.meeting_id,
             attendance_status: "ALREADY_EXISTS",
-            id_asistencia: sesion.map((s) => s.id_asistencia).join(","),
+            id_asistencia: [...idsDelBloque.values()].join(","),
             updated_at: new Date(),
           },
         ]);
         continue;
       }
 
-      const sesionGrupo = await this.zoomRepository.getHorarioGrupo(
-        instance.courseid,
-        instance.start_time.getDay(),
-        dniDocente.c_dnidoc,
-      );
-
-      if (!d_fecha) {
-        throw new Error("No se puede crear la sesión porque d_fecha es null");
-      }
-
-      const diasSemana = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
-      const fechaLocal = new Date(
-        instance.start_time.getTime() - 5 * 60 * 60 * 1000,
-      );
-      const diaTexto = diasSemana[fechaLocal.getUTCDay()];
-      const horaInicio = fechaLocal.toISOString().slice(11, 16);
-
-      const dataSesiones = sesionGrupo.map((s) => ({
+      const dataSesiones = faltantes.map((s) => ({
         n_codper: s.n_codper,
         c_codmod: s.c_codmod,
         c_codfac: s.c_codfac,
@@ -953,12 +1187,20 @@ export class ZoomService {
         await this.zoomRepository.createSesiones(dataSesiones);
       console.log("sesionesCreadas => ", sesionesCreadas);
 
-      const sesiones = await this.zoomRepository.getSesiones(
-        20261,
-        instance.courseid,
-        d_fecha,
-        dniDocente?.c_dnidoc || "",
-      );
+      // Solo las sesiones de este bloque: si el grupo tambien tuvo otra clase
+      // hoy con el mismo docente (teoria y practica), sus alumnos no deben
+      // colgarse de la sesion equivocada.
+      const sesiones = (
+        await this.zoomRepository.getSesiones(
+          instance.courseid,
+          d_fecha,
+          dniDocente.c_dnidoc,
+        )
+      ).filter((s) => {
+        if (!gruposBloque.includes(String(s.c_grpcur).trim())) return false;
+        const clave = claveBloqueDeTema(s.c_tema, horarioDocente);
+        return clave === null || clave === claveBloque;
+      });
 
       const participantes = await this.zoomRepository.getZoomMeetingParticipant(
         instance.id,
@@ -1002,6 +1244,10 @@ export class ZoomService {
           meeting_id: instance.meeting_id,
           updated_at: new Date(),
           attendance_status: "UPLOADED",
+          // Trazabilidad: hasta ahora solo se guardaba en el camino
+          // ALREADY_EXISTS, asi que las instancias subidas no dejaban rastro de
+          // que sesion de SIGU habian alimentado.
+          id_asistencia: sesiones.map((s) => s.id_asistencia).join(","),
         },
       ]);
     }
