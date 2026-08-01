@@ -15,6 +15,7 @@ import {
   esTardanza,
   gruposDeSlots,
   inicioProgramadoSlot,
+  referenciaTardanza,
   resolverGruposSesion,
   seleccionarSlotsPorHora,
   ventanaSlot,
@@ -316,13 +317,46 @@ test("inicioProgramadoSlot devuelve null si el slot no tiene hora", () => {
   assert.equal(inicioProgramadoSlot(roto, SALA_ABIERTA_730), null);
 });
 
-test("BUG REPORTADO: clase 8:00, sala 7:30, alumno 8:05 -> puntual", () => {
-  const inicio = inicioProgramadoSlot(CLASE_8, SALA_ABIERTA_730)!;
+// Referencia real de produccion: mas tardia entre horario y apertura de sala.
+const refDe = (aperturaHhmm: string) =>
+  referenciaTardanza({
+    inicioProgramado: inicioProgramadoSlot(CLASE_8, SALA_ABIERTA_730),
+    aperturaSala: limaEn(aperturaHhmm),
+  });
 
+test("sala abierta ANTES: manda el horario", () => {
+  assert.equal(horaMinLima(refDe("07:30")!), "08:00");
+});
+
+test("sala abierta DESPUES: manda la apertura de la sala", () => {
+  assert.equal(horaMinLima(refDe("08:20")!), "08:20");
+});
+
+test("sala abierta justo a la hora: da lo mismo", () => {
+  assert.equal(horaMinLima(refDe("08:00")!), "08:00");
+});
+
+test("referenciaTardanza cae al dato que exista", () => {
+  const inicio = inicioProgramadoSlot(CLASE_8, SALA_ABIERTA_730)!;
+  assert.equal(
+    referenciaTardanza({ inicioProgramado: inicio, aperturaSala: null }),
+    inicio,
+  );
+  assert.equal(
+    referenciaTardanza({ inicioProgramado: null, aperturaSala: SALA_ABIERTA_730 }),
+    SALA_ABIERTA_730,
+  );
+  assert.equal(
+    referenciaTardanza({ inicioProgramado: null, aperturaSala: null }),
+    null,
+  );
+});
+
+test("BUG REPORTADO: clase 8:00, sala 7:30, alumno 8:05 -> puntual", () => {
   assert.equal(
     esTardanza({
       firstJoin: limaEn("08:05"),
-      referencia: inicio,
+      referencia: refDe("07:30"),
       toleranciaMin: TOLERANCIA,
     }),
     false,
@@ -337,6 +371,41 @@ test("BUG REPORTADO: clase 8:00, sala 7:30, alumno 8:05 -> puntual", () => {
     }),
     true,
     "asi se comportaba antes del fix",
+  );
+});
+
+test("sala abierta tarde: clase 8:00, sala 8:20, alumno 8:25 -> puntual", () => {
+  assert.equal(
+    esTardanza({
+      firstJoin: limaEn("08:25"),
+      referencia: refDe("08:20"),
+      toleranciaMin: TOLERANCIA,
+    }),
+    false,
+    "no podia entrar antes de que la sala existiera",
+  );
+
+  // Midiendo solo contra el horario daba tardanza: 25 > 15.
+  assert.equal(
+    esTardanza({
+      firstJoin: limaEn("08:25"),
+      referencia: inicioProgramadoSlot(CLASE_8, SALA_ABIERTA_730),
+      toleranciaMin: TOLERANCIA,
+    }),
+    true,
+    "asi se comportaba midiendo solo contra el horario",
+  );
+});
+
+test("sala abierta tarde: el que entra mucho despues sigue con tardanza", () => {
+  assert.equal(
+    esTardanza({
+      firstJoin: limaEn("08:50"),
+      referencia: refDe("08:20"),
+      toleranciaMin: TOLERANCIA,
+    }),
+    true,
+    "30 min despues de que abrio la sala",
   );
 });
 

@@ -268,17 +268,17 @@ export class TiService {
     console.log("nuevoDocentes => ", nuevoDocentes);
     console.log("borrarDocentes => ", borrarDocentes);
 
-    // const aSuspender = [...borrar, ...borrarDocentes].map(
-    //   (user: MoodleUser) => {
-    //     return {
-    //       id: user.id,
-    //       roleid: user.roles[0]!.roleid,
-    //     };
-    //   },
-    // );
+    const aSuspender = [...borrar, ...borrarDocentes].map(
+      (user: MoodleUser) => {
+        return {
+          id: user.id,
+          roleid: user.roles[0]!.roleid,
+        };
+      },
+    );
 
-    // await this.moodleHttp.suspenderMatricula(aSuspender, courseid);
-    // await this.moodleHttp.matricular([...nuevo, ...nuevoDocentes], courseid);
+    await this.moodleHttp.suspenderMatricula(aSuspender, courseid);
+    await this.moodleHttp.matricular([...nuevo, ...nuevoDocentes], courseid);
 
     return {
       alumnosSigu: alumnosSigu.length,

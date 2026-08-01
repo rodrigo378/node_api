@@ -235,12 +235,38 @@ export function inicioProgramadoSlot(
 }
 
 /**
- * Si el alumno llego tarde, medido contra la hora PROGRAMADA de la clase.
+ * Momento desde el que se cuenta la tardanza: la mas tardia entre la hora
+ * programada de la clase y la apertura de la sala.
  *
- * Antes se medía contra la apertura de la sala, que es cuando el docente abrio
- * Zoom. Con la clase a las 8:00, sala abierta 7:30 y el alumno entrando 8:05, la
- * diferencia daba 35 min y quedaba con tardanza aunque llego 5 min antes de su
- * clase.
+ * Las dos referencias por separado fallan en un sentido distinto:
+ *   - Solo la apertura de la sala: clase 8:00, sala abierta 7:30, alumno 8:05
+ *     daba 35 min y quedaba con tardanza aunque llego antes de su clase.
+ *   - Solo el horario: clase 8:00, sala abierta 8:20, alumno 8:25 daba 25 min y
+ *     quedaba con tardanza aunque entro apenas la sala existio.
+ *
+ * Tomar la mayor cubre las dos: si el docente abrio antes manda el horario, si
+ * abrio tarde manda la apertura.
+ */
+export function referenciaTardanza(params: {
+  inicioProgramado: Date | null | undefined;
+  aperturaSala: Date | null | undefined;
+}): Date | null {
+  const { inicioProgramado, aperturaSala } = params;
+
+  if (inicioProgramado && aperturaSala) {
+    return new Date(
+      Math.max(inicioProgramado.getTime(), aperturaSala.getTime()),
+    );
+  }
+
+  return inicioProgramado ?? aperturaSala ?? null;
+}
+
+/**
+ * Si el alumno llego tarde. `referencia` sale de referenciaTardanza().
+ *
+ * Devuelve null, no false, cuando falta algun dato: "no se pudo determinar" no
+ * es lo mismo que "llego puntual".
  */
 export function esTardanza(params: {
   firstJoin: Date | null | undefined;

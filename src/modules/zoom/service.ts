@@ -15,6 +15,7 @@ import {
   esTardanza,
   gruposDeSlots,
   inicioProgramadoSlot,
+  referenciaTardanza,
   resolverGruposSesion,
 } from "./horario";
 import {
@@ -717,21 +718,27 @@ export class ZoomService {
       const a_c_grpcur = gruposDeSlots(slotsDelBloque);
       console.log("a_c_grpcur => ", a_c_grpcur);
 
-      // Referencia de la tardanza: la hora en que la clase DEBIA empezar segun
-      // el horario, no cuando el docente abrio la sala. Si la reunion no cae en
-      // ningun bloque no hay hora programada y se cae a la apertura de la sala.
+      // Referencia de la tardanza: la mas tardia entre la hora programada del
+      // bloque y la apertura de la sala. Si el docente abrio antes manda el
+      // horario; si abrio tarde, la apertura, porque el alumno no podia entrar
+      // a una sala que no existia.
       const inicioProgramado =
         slotsDelBloque[0] && start_time
           ? inicioProgramadoSlot(slotsDelBloque[0], start_time)
           : null;
 
-      const referenciaTardanza = inicioProgramado ?? start_time ?? null;
+      const refTardanza = referenciaTardanza({
+        inicioProgramado,
+        aperturaSala: start_time,
+      });
 
       console.log(
         "referencia tardanza => ",
-        inicioProgramado
-          ? `${horaMinLima(inicioProgramado)} (horario)`
-          : `${start_time ? horaMinLima(start_time) : "?"} (apertura de sala, sin bloque)`,
+        refTardanza
+          ? `${horaMinLima(refTardanza)} (` +
+              `horario ${inicioProgramado ? horaMinLima(inicioProgramado) : "-"}, ` +
+              `sala ${start_time ? horaMinLima(start_time) : "-"})`
+          : "sin referencia",
       );
 
       for (const procesado of procesados) {
@@ -820,7 +827,7 @@ export class ZoomService {
         // Late: contra la hora programada del bloque, no la apertura de la sala.
         procesado.late = esTardanza({
           firstJoin: procesado.firstJoin,
-          referencia: referenciaTardanza,
+          referencia: refTardanza,
           toleranciaMin: config.lateToleranceMinutes,
         });
       }
@@ -928,7 +935,7 @@ export class ZoomService {
 
         procesado.late = esTardanza({
           firstJoin: procesado.firstJoin,
-          referencia: referenciaTardanza,
+          referencia: refTardanza,
           toleranciaMin: config.lateToleranceMinutes,
         });
       }
