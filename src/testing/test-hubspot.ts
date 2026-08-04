@@ -27,7 +27,7 @@ async function main() {
   // );
 
   // const service = new TiService(new TiRepository(db), new MoodleHttpClient());
-
+  //
   // const result = await service.sincronizar(6078);
   // const result = await service.sincronizarConsolidado();
 
