@@ -5,6 +5,7 @@ export const ZOOM_QUEUE = "zoom";
 export const HUBSPOT_QUEUE = "hubspot";
 export const TI_QUEUE = "ti";
 export const HEALTH_QUEUE = "health";
+export const MAIN_QUEUE = "main";
 
 // Acciones de health (lo que llega en job.data.action)
 export const HEALTH_ACTIONS = {
@@ -41,3 +42,9 @@ export const TI_ACTIONS = {
 } as const;
 
 export type TiAction = (typeof TI_ACTIONS)[keyof typeof TI_ACTIONS];
+
+export const MAIL_ACTIONS = {
+  SEND: "send",
+} as const;
+
+export type MailAction = (typeof MAIL_ACTIONS)[keyof typeof MAIL_ACTIONS];

@@ -17,9 +17,13 @@ import { HubspotHttpClient } from "../../modules/hubspot/http";
 import { HubspotRepository } from "../../modules/hubspot/repository";
 import { HubspotService } from "../../modules/hubspot/service";
 import { buildHubspotHandler } from "../../modules/hubspot/hubspot.handler";
+// Mail
+import { MailService } from "../../modules/mail/service";
+import { buildMailHandler } from "../../modules/mail/mail.handler";
 import {
   HEALTH_QUEUE,
   HUBSPOT_QUEUE,
+  MAIN_QUEUE,
   TI_QUEUE,
   ZOOM_QUEUE,
 } from "./queue.constants";
@@ -186,10 +190,14 @@ export function startWorkers(db: DbRegistry) {
   const ti = buildWorker(TI_QUEUE, buildTiHandler(tiService), 2, log);
 
   // Health: estado GENERAL de las 3 colas (viven en el mismo proceso)
+  const mailService = new MailService();
+  const mail = buildWorker(MAIN_QUEUE, buildMailHandler(mailService), 5, log);
+
   const getStatus = (): WorkersStatus => ({
     [ZOOM_QUEUE]: zoom.getStatus(),
     [HUBSPOT_QUEUE]: hubspot.getStatus(),
     [TI_QUEUE]: ti.getStatus(),
+    [MAIN_QUEUE]: mail.getStatus(),
   });
 
   // Cola dedicada 'health': liviana y aislada, siempre responde rápido
@@ -200,7 +208,7 @@ export function startWorkers(db: DbRegistry) {
     log,
   );
 
-  logger.info("Workers 'zoom', 'hubspot', 'ti' y 'health' iniciados");
+  logger.info("Workers 'zoom', 'hubspot', 'ti', 'main' y 'health' iniciados");
 
   const closeAll = async () => {
     await Promise.all([
@@ -210,6 +218,8 @@ export function startWorkers(db: DbRegistry) {
       hubspot.events.close(),
       ti.worker.close(),
       ti.events.close(),
+      mail.worker.close(),
+      mail.events.close(),
       health.worker.close(),
       health.events.close(),
     ]);

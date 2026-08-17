@@ -24,6 +24,12 @@ const BaseEnvSchema = z.object({
 
   BASE_MOODLE: z.string(),
   TOKEN_MOODLE: z.string(),
+
+  CORREO_OUTLOOK: z.string().optional(),
+  CLAVE_CORREO: z.string().optional(),
+  CORREO_HOST: z.string().default("smtp.office365.com"),
+  CORREO_PORT: z.coerce.number().default(587),
+  CORREO_NOMBRE: z.string().default("Mesa de Ayuda UMA"),
 });
 
 const base = BaseEnvSchema.parse(process.env);
@@ -70,6 +76,14 @@ export const env = {
   TI: {
     BASE_MOODLE: base.BASE_MOODLE,
     TOKEN_MOODLE: base.TOKEN_MOODLE,
+  },
+
+  MAIL: {
+    HOST: base.CORREO_HOST,
+    PORT: base.CORREO_PORT,
+    USER: base.CORREO_OUTLOOK,
+    PASSWORD: base.CLAVE_CORREO,
+    FROM_NAME: base.CORREO_NOMBRE,
   },
 
   DB_CONNECTIONS: names.map((name) =>
