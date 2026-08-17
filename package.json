@@ -9,7 +9,8 @@
     "test:zoom": "tsx src/testing/test-hubspot.ts",
     "test:salas": "tsx src/testing/test-salas-simultaneas.ts",
     "test:horario": "tsx src/testing/test-horario.ts",
-    "test:dryrun": "tsx src/testing/test-asistencia-dryrun.ts"
+    "test:dryrun": "tsx src/testing/test-asistencia-dryrun.ts",
+    "test:mail": "tsx src/testing/test-mail.ts"
   },
   "keywords": [],
   "author": "",
@@ -22,6 +23,7 @@
     "knex": "^3.1.0",
     "luxon": "^3.7.2",
     "mysql2": "^3.17.2",
+    "nodemailer": "^9.0.5",
     "pino": "^10.3.1",
     "pino-pretty": "^13.1.3",
     "undici": "^7.22.0",
@@ -30,6 +32,7 @@
   "devDependencies": {
     "@types/luxon": "^3.7.1",
     "@types/node": "^25.2.3",
+    "@types/nodemailer": "^8.0.1",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3"
   }
