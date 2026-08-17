@@ -1,13 +1,3 @@
-// worker-sync/src/testing/test-asistencia-dryrun.ts
-//
-// Dry-run de la resolucion de sesiones: lee instancias reales y muestra que
-// sesiones de tb_asis_alum se crearian, SIN escribir nada en ninguna BD.
-//
-// Uso:
-//   npm run test:dryrun            -> detalle del courseid 6855
-//   npm run test:dryrun 1234       -> detalle de un courseid
-//   npm run test:dryrun all        -> resumen de todos los cursos sincronizados
-
 import "dotenv/config";
 import { env } from "../core/config/env";
 import { initDb } from "../core/db";
@@ -16,6 +6,7 @@ import {
   docentesDelBloque,
   gruposDeSlots,
   resolverGruposSesion,
+  seccionesDeSlots,
 } from "../modules/zoom/horario";
 import {
   diaSemanaLima,
@@ -39,6 +30,11 @@ type Resultado = {
   ventana: string;
   antes: string[];
   ahora: string[];
+  // Sesiones de tb_asis_alum que crea el bloque: por grupo (logica vieja) vs por
+  // seccion especialidad|modalidad|plan|grupo (logica nueva). Cuando difieren,
+  // la corrida vieja dejaba sin sesion a los alumnos de las secciones faltantes.
+  gruposBloque: string[];
+  seccionesBloque: string[];
 };
 
 async function resolver(
@@ -60,7 +56,16 @@ async function resolver(
   const dniGuardado = docente?.c_dnidoc ?? null;
 
   if (!dniGuardado) {
-    return { inst, dniGuardado, candidatos, ventana: "-", antes: [], ahora: [] };
+    return {
+      inst,
+      dniGuardado,
+      candidatos,
+      ventana: "-",
+      antes: [],
+      ahora: [],
+      gruposBloque: [],
+      seccionesBloque: [],
+    };
   }
 
   const horario = await repo.getHorarioGrupo(
@@ -79,6 +84,8 @@ async function resolver(
       : "ninguna",
     antes: gruposDeSlots(horario), // lo que se creaba antes del fix
     ahora: gruposDeSlots(bloque),
+    gruposBloque: gruposDeSlots(bloque),
+    seccionesBloque: seccionesDeSlots(bloque),
   };
 }
 
@@ -114,6 +121,8 @@ async function main() {
     docenteCambia: 0,
     gruposRecortados: 0,
     igual: 0,
+    seccionesColapsadas: 0,
+    sesionesFaltantes: 0,
   };
 
   for (const inst of instancias) {
@@ -138,6 +147,12 @@ async function main() {
       resumen.igual++;
     }
 
+    if (r.seccionesBloque.length > r.gruposBloque.length) {
+      resumen.seccionesColapsadas++;
+      resumen.sesionesFaltantes +=
+        r.seccionesBloque.length - r.gruposBloque.length;
+    }
+
     if (todos) continue;
 
     const start = r.inst.start_time!;
@@ -152,14 +167,20 @@ async function main() {
       continue;
     }
 
+    const colapso = r.seccionesBloque.length > r.gruposBloque.length;
+
     console.log(
       `${cabecera} | bloque ${r.ventana.padEnd(11)}` +
         ` | antes [${r.antes.join(",")}] -> ahora [${r.ahora.join(",")}]` +
-        ` ${r.antes.join() === r.ahora.join() ? " " : "*"}`,
+        ` ${r.antes.join() === r.ahora.join() ? " " : "*"}` +
+        ` | sesiones ${r.gruposBloque.length} -> ${r.seccionesBloque.length}` +
+        `${colapso ? ` FUSIONADO [${r.seccionesBloque.join(", ")}]` : ""}`,
     );
   }
 
   console.log("\n=== resumen ===");
+  console.log(`  instancias de curso fusionado: ${resumen.seccionesColapsadas}`);
+  console.log(`  sesiones que faltaban crear  : ${resumen.sesionesFaltantes}`);
   console.log(`  grupos recortados por el fix : ${resumen.gruposRecortados}`);
   console.log(`  sin cambio                   : ${resumen.igual}`);
   console.log(`  bloque con docente ambiguo   : ${resumen.ambiguo}`);

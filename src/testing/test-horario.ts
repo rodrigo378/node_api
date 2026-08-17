@@ -8,6 +8,7 @@
 import assert from "node:assert/strict";
 import {
   claveBloqueDeTema,
+  claveSeccion,
   claveVentana,
   distanciaAVentana,
   docentesDelBloque,
@@ -17,6 +18,7 @@ import {
   inicioProgramadoSlot,
   referenciaTardanza,
   resolverGruposSesion,
+  seccionesDeSlots,
   seleccionarSlotsPorHora,
   ventanaSlot,
   type SlotHorario,
@@ -514,6 +516,121 @@ test("hora fuera de todo bloque no genera sesiones", () => {
 test("dia sin clases no genera sesiones", () => {
   // getHorarioGrupo ya filtra por n_numdia: otro dia llega como lista vacia.
   assert.deepEqual(resolverGruposSesion({ slots: [], minutos: 20 * 60 }), []);
+});
+
+console.log("\n== secciones de un curso fusionado (courseid 6390, M4) ==");
+
+// Horario real del courseid 6390 los martes 09:40-11:20, docente 09394947:
+// quince slots comparten c_grpcur 'M4' y solo se distinguen por especialidad,
+// modalidad y plan. Mas un unico slot de A4.
+const seccion = (
+  c_codesp: string,
+  c_codmod: string,
+  n_codpla: number,
+  c_grpcur: string,
+): SlotHorario => ({
+  c_grpcur,
+  c_dnidoc: "09394947",
+  c_hh_ini: "09",
+  c_mi_ini: "40",
+  c_hh_fin: "11",
+  c_mi_fin: "20",
+  n_codper: 20262,
+  c_codfac: c_codesp.startsWith("E") ? "E" : "S",
+  c_codesp,
+  c_codcur: "SCTT3081",
+  c_codmod,
+  n_codpla,
+  n_numdia: 2,
+  c_tipo: "VIR",
+});
+
+const FUSIONADO: SlotHorario[] = [
+  seccion("E2", "2", 2025, "M4"),
+  seccion("E3", "2", 2025, "M4"),
+  seccion("E4", "2", 2025, "M4"),
+  seccion("E6", "2", 2025, "M4"),
+  seccion("S1", "1", 2025, "M4"),
+  seccion("S1", "2", 2025, "M4"),
+  seccion("S2", "1", 2025, "M4"),
+  seccion("S2", "2", 2025, "M4"),
+  seccion("S3", "2", 2025, "M4"),
+  seccion("S4", "2", 2025, "M4"),
+  seccion("S5", "2", 2025, "M4"),
+  seccion("S6", "2", 2025, "M4"),
+  seccion("E2", "2", 2023, "M4"),
+  seccion("E3", "2", 2023, "M4"),
+  seccion("E4", "2", 2023, "M4"),
+  seccion("S2", "2", 2023, "A4"),
+];
+
+test("claveSeccion distingue especialidad, modalidad y plan", () => {
+  assert.equal(claveSeccion(seccion("E2", "2", 2025, "M4")), "E2|2|2025|M4");
+  assert.notEqual(
+    claveSeccion(seccion("E2", "2", 2025, "M4")),
+    claveSeccion(seccion("E2", "2", 2023, "M4")),
+  );
+  assert.notEqual(
+    claveSeccion(seccion("S1", "1", 2025, "M4")),
+    claveSeccion(seccion("S1", "2", 2025, "M4")),
+  );
+});
+
+test("claveSeccion normaliza numero y texto", () => {
+  // Los slots traen n_codpla como number y tb_asis_alum lo devuelve como string.
+  assert.equal(
+    claveSeccion({ c_codesp: "E2", c_codmod: 2, n_codpla: 2025, c_grpcur: "M4" }),
+    claveSeccion({
+      c_codesp: "E2",
+      c_codmod: "2",
+      n_codpla: "2025",
+      c_grpcur: " M4 ",
+    }),
+  );
+});
+
+test("BUG REPORTADO: agrupar por grupo colapsa 16 secciones en 2", () => {
+  const bloque = resolverGruposSesion({
+    slots: FUSIONADO,
+    minutos: 9 * 60 + 40,
+  });
+
+  assert.equal(bloque.length, 16, "el bloque entero cae en la misma ventana");
+  assert.deepEqual(gruposDeSlots(bloque), ["A4", "M4"], "lo que se creaba antes");
+  assert.equal(
+    seccionesDeSlots(bloque).length,
+    16,
+    "una sesion de tb_asis_alum por seccion",
+  );
+});
+
+test("un alumno solo corresponde a la sesion de SU seccion", () => {
+  const secciones = seccionesDeSlots(
+    resolverGruposSesion({ slots: FUSIONADO, minutos: 9 * 60 + 40 }),
+  );
+
+  // Matriculado real de la instancia 2303.
+  const candy = { c_codesp: "E2", c_codmod: 2, n_codpla: 2025, c_grpcur: "M4" };
+  assert.equal(secciones.includes(claveSeccion(candy)), true);
+
+  // Mismo grupo M4, especialidad que no dicta este docente en este bloque.
+  const ajeno = { c_codesp: "S9", c_codmod: 2, n_codpla: 2025, c_grpcur: "M4" };
+  assert.equal(
+    secciones.includes(claveSeccion(ajeno)),
+    false,
+    "antes daba true porque solo comparaba c_grpcur",
+  );
+});
+
+test("curso no fusionado: una seccion por grupo, sin cambio de comportamiento", () => {
+  const sel = resolverGruposSesion({ slots: del(MARLENE), minutos: 17 * 60 + 13 });
+
+  assert.deepEqual(gruposDeSlots(sel), ["N1", "N2"]);
+  assert.equal(
+    seccionesDeSlots(sel).length,
+    gruposDeSlots(sel).length,
+    "en M1/M2/M3 agrupar por grupo o por seccion da lo mismo",
+  );
 });
 
 console.log(`\n${ok} tests ok${process.exitCode ? " (con fallas)" : ""}\n`);

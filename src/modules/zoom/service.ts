@@ -10,13 +10,14 @@ import {
 import { ZoomUser } from "./types/http.types";
 import {
   claveBloqueDeTema,
+  claveSeccion,
   claveVentana,
   docentesDelBloque,
   esTardanza,
-  gruposDeSlots,
   inicioProgramadoSlot,
   referenciaTardanza,
   resolverGruposSesion,
+  seccionesDeSlots,
 } from "./horario";
 import {
   diaSemanaLima,
@@ -715,8 +716,12 @@ export class ZoomService {
               minutos: minutosInicio,
             });
 
-      const a_c_grpcur = gruposDeSlots(slotsDelBloque);
-      console.log("a_c_grpcur => ", a_c_grpcur);
+      // Por seccion (especialidad|modalidad|plan|grupo), no por grupo: en un
+      // curso fusionado todos los alumnos comparten c_grpcur y marcarlos por
+      // grupo daba corresponde_sesion = 1 a gente que despues no encontraba
+      // ninguna sesion en tb_asis_alum y se perdia en silencio.
+      const seccionesBloque = seccionesDeSlots(slotsDelBloque);
+      console.log("secciones del bloque => ", seccionesBloque);
 
       // Referencia de la tardanza: la mas tardia entre la hora programada del
       // bloque y la apertura de la sala. Si el docente abrio antes manda el
@@ -809,9 +814,9 @@ export class ZoomService {
           ? String(matriculado.c_codmod)
           : null;
         procesado.c_grpcur = matriculado?.c_grpcur ?? null;
-        procesado.corresponde_sesion = a_c_grpcur.includes(
-          matriculado?.c_grpcur ?? "",
-        );
+        procesado.corresponde_sesion = matriculado
+          ? seccionesBloque.includes(claveSeccion(matriculado))
+          : false;
 
         procesado.role = "student";
         // Attendance
@@ -849,11 +854,25 @@ export class ZoomService {
           .reduce((map, p) => {
             const isHost = p.role === "host";
 
+            // Zoom manda id/email como "" (no null) para el participante sin
+            // autenticar, y ?? no descarta el string vacio: sin normalizar,
+            // todos los no identificados caian en la misma clave y se fusionaban
+            // en una sola fila con las sesiones de media clase.
+            const norm = (v?: string | null) => {
+              const s = v?.trim();
+              return s ? s : null;
+            };
+
             const key = isHost
-              ? `host-${p.zoomUser_id ?? p.name ?? "unknown"}`
+              ? `host-${norm(p.zoomUser_id) ?? norm(p.name) ?? "unknown"}`
               : p.c_codalu
                 ? `student-${p.c_codalu}`
-                : `unmatched-${p.zoomUser_id ?? p.email ?? p.name ?? Math.random()}`;
+                : `unmatched-${
+                    norm(p.zoomUser_id) ??
+                    norm(p.email)?.toLowerCase() ??
+                    norm(p.name)?.toUpperCase() ??
+                    `rnd-${Math.random()}`
+                  }`;
 
             const actual = map.get(key);
             const sesionesActuales = Array.isArray(p.sessions)
@@ -1105,9 +1124,13 @@ export class ZoomService {
         continue;
       }
 
-      const gruposBloque = gruposDeSlots(sesionGrupo);
+      // Seccion = especialidad|modalidad|plan|grupo, la granularidad real de
+      // tb_asis_alum. Un curso fusionado (M4 dictado a diez especialidades) trae
+      // quince slots con el mismo c_grpcur: agrupar por grupo creaba UNA sesion
+      // y los alumnos de las otras catorce secciones no encontraban la suya.
+      const seccionesBloque = seccionesDeSlots(sesionGrupo);
       const claveBloque = claveVentana(sesionGrupo[0]!);
-      console.log("grupos del bloque => ", gruposBloque, claveBloque);
+      console.log("secciones del bloque => ", seccionesBloque, claveBloque);
 
       // Dedupe por grupo Y bloque, no por dia. Dos instancias de la misma clase
       // (el docente cerro y volvio a abrir la sala) no deben duplicar la sesion,
@@ -1124,8 +1147,8 @@ export class ZoomService {
       const idsDelBloque = new Map<string, number>();
 
       for (const s of existentes ?? []) {
-        const grupo = String(s.c_grpcur).trim();
-        if (!gruposBloque.includes(grupo)) continue;
+        const seccion = claveSeccion(s);
+        if (!seccionesBloque.includes(seccion)) continue;
 
         const claveExistente = claveBloqueDeTema(s.c_tema, horarioDocente);
 
@@ -1133,41 +1156,37 @@ export class ZoomService {
           // Sesion sin hora en el tema (cargada a mano): no se puede ubicar en
           // un bloque, se respeta y no se duplica.
           console.warn(
-            `Sesion ${s.id_asistencia} (${grupo}, ${d_fecha}) sin hora en c_tema; ` +
+            `Sesion ${s.id_asistencia} (${seccion}, ${d_fecha}) sin hora en c_tema; ` +
               `se asume que cubre este bloque.`,
           );
         } else if (claveExistente !== claveBloque) {
           continue;
         }
 
-        idsDelBloque.set(grupo, s.id_asistencia);
+        idsDelBloque.set(seccion, s.id_asistencia);
       }
 
-      // Una fila por grupo: tb_asis_alum no tiene unique key (el ON DUPLICATE KEY
+      // Una fila por seccion: tb_asis_alum no tiene unique key (el ON DUPLICATE KEY
       // de createSesiones solo cubre la PK autoincremental), asi que dos slots
-      // del mismo grupo en la misma ventana insertarian la sesion dos veces.
-      const porGrupo = new Map<string, (typeof sesionGrupo)[number]>();
+      // de la misma seccion en la misma ventana insertarian la sesion dos veces.
+      const porSeccion = new Map<string, (typeof sesionGrupo)[number]>();
       for (const s of sesionGrupo) {
-        const grupo = String(s.c_grpcur).trim();
-        if (!idsDelBloque.has(grupo) && !porGrupo.has(grupo)) {
-          porGrupo.set(grupo, s);
+        const seccion = claveSeccion(s);
+        if (!idsDelBloque.has(seccion) && !porSeccion.has(seccion)) {
+          porSeccion.set(seccion, s);
         }
       }
 
-      const faltantes = [...porGrupo.values()];
+      const faltantes = [...porSeccion.values()];
 
-      if (!faltantes.length) {
-        await this.zoomRepository.upsertZoomMeetingInstances([
-          {
-            uuid: instance.uuid,
-            meeting_id: instance.meeting_id,
-            attendance_status: "ALREADY_EXISTS",
-            id_asistencia: [...idsDelBloque.values()].join(","),
-            updated_at: new Date(),
-          },
-        ]);
-        continue;
-      }
+      // Antes esto era un `continue`: si todas las secciones ya tenian sesion,
+      // la instancia se marcaba ALREADY_EXISTS y se iba SIN subir un solo
+      // alumno. Pasaba cuando el docente reabria la sala (dos instancias del
+      // mismo bloque) o cuando la sesion ya estaba cargada a mano, y en ese
+      // segundo caso la asistencia no subia nunca. Ahora sigue de largo: el
+      // detalle se inserta igual y el ON DUPLICATE KEY de tb_asis_alum_det hace
+      // que reprocesar sea inofensivo.
+      const soloExistentes = !faltantes.length;
 
       const dataSesiones = faltantes.map((s) => ({
         n_codper: s.n_codper,
@@ -1204,14 +1223,31 @@ export class ZoomService {
           dniDocente.c_dnidoc,
         )
       ).filter((s) => {
-        if (!gruposBloque.includes(String(s.c_grpcur).trim())) return false;
+        if (!seccionesBloque.includes(claveSeccion(s))) return false;
         const clave = claveBloqueDeTema(s.c_tema, horarioDocente);
         return clave === null || clave === claveBloque;
       });
 
+      const sesionPorSeccion = new Map(
+        sesiones.map((s) => [claveSeccion(s), s.id_asistencia]),
+      );
+
+      // El plan del alumno se saca de la matricula porque
+      // zoom_meeting_participants no guarda n_codpla, y sin el un alumno de plan
+      // 2023 se colgaba de la sesion del plan 2025 de su misma especialidad.
+      const matriculados = await this.zoomRepository.getMatriculadosCourseid(
+        instance.courseid,
+      );
+
+      const seccionPorAlumno = new Map(
+        matriculados.map((m) => [String(m.c_codalu).trim(), claveSeccion(m)]),
+      );
+
       const participantes = await this.zoomRepository.getZoomMeetingParticipant(
         instance.id,
       );
+
+      const descartados: string[] = [];
 
       const part = participantes
         .filter(
@@ -1219,19 +1255,23 @@ export class ZoomService {
             Number(p.corresponde_sesion) === 1 && Number(p.attendance) === 1,
         )
         .map((p) => {
-          const sesion = sesiones.find(
-            (s) =>
-              String(s.c_codesp) === String(p.c_codesp) &&
-              String(s.c_codmod) === String(p.c_codmod) &&
-              String(s.c_grpcur) === String(p.c_grpcur),
-          );
+          const codalu = String(p.c_codalu ?? "").trim();
+          const seccion = seccionPorAlumno.get(codalu);
+          const id_asistencia = seccion
+            ? sesionPorSeccion.get(seccion)
+            : undefined;
 
-          if (!sesion?.id_asistencia) {
+          if (!id_asistencia) {
+            // Antes se caia al filter sin dejar rastro: una instancia podia
+            // subir 2 de 52 alumnos y quedar igual de "UPLOADED".
+            descartados.push(
+              `${codalu || p.name} (${seccion ?? "sin matricula"})`,
+            );
             return null;
           }
 
           return {
-            id_asistencia: sesion.id_asistencia,
+            id_asistencia,
             c_codalu: p.c_codalu!,
             c_estado: p.late ? "T" : "A",
             seguir: new Date(),
@@ -1239,7 +1279,15 @@ export class ZoomService {
         })
         .filter((p) => p !== null);
 
-      console.log("part => ", part);
+      if (descartados.length) {
+        console.warn(
+          `Instance ${instance.id}: ${descartados.length} alumnos presentes sin ` +
+            `sesion en el bloque [${seccionesBloque.join(", ")}] => ` +
+            descartados.join("; "),
+        );
+      }
+
+      console.log("part => ", part.length, "descartados => ", descartados.length);
 
       const createSesionDetalle =
         await this.zoomRepository.createAsistenciaDetalles(part);
@@ -1250,7 +1298,9 @@ export class ZoomService {
           uuid: instance.uuid,
           meeting_id: instance.meeting_id,
           updated_at: new Date(),
-          attendance_status: "UPLOADED",
+          // ALREADY_EXISTS ahora significa "no hubo que crear sesiones", no
+          // "no se subio nada": el detalle ya se inserto arriba.
+          attendance_status: soloExistentes ? "ALREADY_EXISTS" : "UPLOADED",
           // Trazabilidad: hasta ahora solo se guardaba en el camino
           // ALREADY_EXISTS, asi que las instancias subidas no dejaban rastro de
           // que sesion de SIGU habian alimentado.

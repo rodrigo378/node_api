@@ -173,6 +173,34 @@ export function gruposDeSlots(slots: SlotHorario[]): string[] {
 }
 
 /**
+ * Identidad de la seccion a la que pertenece una fila de asistencia.
+ *
+ * c_grpcur NO alcanza: en los cursos fusionados (un M4 dictado a diez
+ * especialidades a la vez) quince filas de tb_cur_grp_hor comparten el mismo
+ * grupo y solo se distinguen por especialidad, modalidad y plan. tb_asis_alum
+ * lleva una fila por esa combinacion, asi que deduplicar por grupo colapsaba las
+ * quince en una y dejaba sin sesion a los alumnos de las otras catorce.
+ *
+ * Sirve para slots del horario, filas de tb_asis_alum y matriculados por igual:
+ * las tres traen las mismas cuatro columnas.
+ */
+export function claveSeccion(fila: {
+  c_codesp?: unknown;
+  c_codmod?: unknown;
+  n_codpla?: unknown;
+  c_grpcur?: unknown;
+}): string {
+  return [fila.c_codesp, fila.c_codmod, fila.n_codpla, fila.c_grpcur]
+    .map((v) => String(v ?? "").trim())
+    .join("|");
+}
+
+/** Secciones distintas presentes en los slots, ordenadas. */
+export function seccionesDeSlots(slots: SlotHorario[]): string[] {
+  return [...new Set(slots.map(claveSeccion).filter((k) => k !== "|||"))].sort();
+}
+
+/**
  * Docentes que dictan el bloque horario de la reunion, ordenados por DNI.
  *
  * Mas de uno significa que el horario no alcanza para saber quien dicto: la sala

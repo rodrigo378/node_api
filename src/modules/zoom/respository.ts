@@ -641,6 +641,9 @@ export class ZoomRepository {
       s.courseid = ?
       AND h.n_numdia = ?
       ${docenteWhere}
+    -- Orden fijo: sin el, que slot representa a cada seccion dependia del plan
+    -- de ejecucion de MySQL y dos corridas podian elegir filas distintas.
+    ORDER BY h.c_grpcur, h.c_codesp, h.c_codmod, h.n_codpla, h.c_hh_ini, h.c_mi_ini
     `,
       params,
     );

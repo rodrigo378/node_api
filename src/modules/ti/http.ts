@@ -18,7 +18,7 @@ export interface MoodleUser {
 
 export class MoodleHttpClient {
   // ===================================================================================
-  async getMatriculadosMoodle(courseid: number): Promise<MoodleUser[]> {
+  async getMatriculadosMoodle(courseid: number) {
     const body = new URLSearchParams();
 
     body.append("wstoken", env.TI.TOKEN_MOODLE);
@@ -58,7 +58,7 @@ export class MoodleHttpClient {
   }
 
   // ===================================================================================
-  async getUsersByEmail(emails: string[]): Promise<MoodleUser[]> {
+  async getUsersByEmail(emails: string[]) {
     const cleanEmails = emails
       .map((email) => email.trim().toLowerCase())
       .filter((email) => email.length > 0);
